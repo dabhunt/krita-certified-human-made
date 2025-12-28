@@ -31,34 +31,46 @@ echo ""
 # Step 1: Build Rust library
 echo "Step 1: Building Rust library..."
 echo "--------------------------------"
-cargo build --release
 
-if [ $? -ne 0 ]; then
-    echo "❌ Cargo build failed!"
-    exit 1
-fi
-
-echo "✅ Rust library built successfully"
-echo ""
-
-# Step 2: Create lib directory
-echo "Step 2: Preparing plugin library directory..."
-echo "----------------------------------------------"
-mkdir -p krita-plugin/chm_verifier/lib
-
-# Step 3: Copy compiled library
-echo "Step 3: Copying compiled library..."
-echo "-----------------------------------"
-
+# Use specialized build script for macOS (handles PyO3 linking)
 if [[ "$OSTYPE" == "darwin"* ]]; then
-    cp target/release/libchm.dylib krita-plugin/chm_verifier/lib/chm.so
-elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    cp target/release/libchm.so krita-plugin/chm_verifier/lib/chm.so
+    echo "Using macOS-specific build script (handles Krita's Python)..."
+    ./build-for-krita.sh
+    
+    if [ $? -ne 0 ]; then
+        echo "❌ Build failed!"
+        exit 1
+    fi
+    
+    echo "✅ Build complete (library already copied to plugin)"
+    
 else
-    cp target/release/chm.pyd krita-plugin/chm_verifier/lib/chm.pyd
+    # Linux/Windows: standard build
+    cargo build --release
+    
+    if [ $? -ne 0 ]; then
+        echo "❌ Cargo build failed!"
+        exit 1
+    fi
+    
+    echo "✅ Rust library built successfully"
+    echo ""
+    
+    # Create lib directory
+    echo "Step 2: Preparing plugin library directory..."
+    mkdir -p krita-plugin/chm_verifier/lib
+    
+    # Copy compiled library
+    echo "Step 3: Copying compiled library..."
+    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        cp target/release/libchm.so krita-plugin/chm_verifier/lib/chm.so
+    else
+        cp target/release/chm.pyd krita-plugin/chm_verifier/lib/chm.pyd
+    fi
+    
+    echo "✅ Library copied to plugin directory"
 fi
 
-echo "✅ Library copied to plugin directory"
 echo ""
 
 # Step 4: Install to Krita
