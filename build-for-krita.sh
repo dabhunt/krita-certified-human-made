@@ -9,39 +9,36 @@ echo "=================================="
 echo ""
 
 # Step 1: Detect Krita's Python version
-KRITA_PYTHON_PATH="/Applications/Krita.app/Contents/Frameworks/Python.framework/Versions/Current"
+KRITA_PYTHON_PATH="/Applications/krita.app/Contents/Frameworks/Python.framework/Versions/3.10"
 
 if [ ! -d "$KRITA_PYTHON_PATH" ]; then
-    echo "❌ Krita not found at /Applications/Krita.app"
+    echo "❌ Krita not found at /Applications/krita.app"
     echo "   Please install Krita or update KRITA_PYTHON_PATH in this script"
     exit 1
 fi
 
-# Get Python version
-PYTHON_VERSION=$("$KRITA_PYTHON_PATH/bin/python3" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+PYTHON_VERSION="3.10"
 echo "📱 Detected Krita's Python: $PYTHON_VERSION"
+echo "   Location: $KRITA_PYTHON_PATH"
 echo ""
 
 # Step 2: Set PyO3 environment variables for Krita's Python
 echo "Step 1: Configuring PyO3 for Krita's Python..."
 echo "-----------------------------------------------"
 
-export PYO3_PYTHON="$KRITA_PYTHON_PATH/bin/python3"
-export PYTHON_SYS_EXECUTABLE="$KRITA_PYTHON_PATH/bin/python3"
+# PyO3 can build without executing Python if we provide these variables
+export PYO3_CROSS_LIB_DIR="$KRITA_PYTHON_PATH/lib"
+export PYO3_CROSS_PYTHON_VERSION="$PYTHON_VERSION"
 
-# Get Python config
-PYTHON_LDFLAGS=$("$KRITA_PYTHON_PATH/bin/python3-config" --ldflags 2>/dev/null || echo "")
+# Tell PyO3 we're cross-compiling (even though we're not, this skips Python execution)
+export PYO3_CROSS="1"
 
-if [ -z "$PYTHON_LDFLAGS" ]; then
-    echo "⚠️  python3-config not found, using manual configuration..."
-    
-    # Manual configuration for Krita's bundled Python
-    export RUSTFLAGS="-C link-args=-Wl,-rpath,$KRITA_PYTHON_PATH/lib -C link-args=-L$KRITA_PYTHON_PATH/lib"
-else
-    echo "✅ Using python3-config from Krita"
-fi
+# Provide library path for linking
+export RUSTFLAGS="-C link-args=-L$KRITA_PYTHON_PATH/lib -C link-args=-Wl,-rpath,$KRITA_PYTHON_PATH/lib"
 
-echo "   PYO3_PYTHON: $PYO3_PYTHON"
+echo "   PYO3_CROSS_LIB_DIR: $PYO3_CROSS_LIB_DIR"
+echo "   PYO3_CROSS_PYTHON_VERSION: $PYO3_CROSS_PYTHON_VERSION"
+echo "   RUSTFLAGS: $RUSTFLAGS"
 echo ""
 
 # Step 3: Clean previous builds
@@ -66,14 +63,14 @@ else
     echo ""
     echo "Debugging information:"
     echo "----------------------"
-    echo "Python executable: $PYO3_PYTHON"
-    echo "Python version: $PYTHON_VERSION"
+    echo "Python lib dir: $PYO3_CROSS_LIB_DIR"
+    echo "Python version: $PYO3_CROSS_PYTHON_VERSION"
     echo "RUSTFLAGS: $RUSTFLAGS"
     echo ""
     echo "Common fixes:"
-    echo "1. Ensure Krita is installed at /Applications/Krita.app"
+    echo "1. Ensure Krita is installed at /Applications/krita.app"
     echo "2. Try: conda deactivate (if in conda environment)"
-    echo "3. Check docs/phase0-completion-report.md for known issues"
+    echo "3. Check docs/macos-build-guide.md for troubleshooting"
     exit 1
 fi
 
