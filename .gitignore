@@ -1,0 +1,57 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+Cargo.lock
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Krita
+*.kra~
+*.kra-autosave.kra
+
+# CHM specific
+.chm/
+*.chm
+sessions/
+proofs/
+
+# Secrets
+*.key
+*.pem
+.env
+secrets.json
+
+# Build artifacts
+*.dylib
+*.dll
+*.exe
+
+# Logs
+*.log
+

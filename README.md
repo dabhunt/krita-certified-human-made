@@ -1,0 +1,284 @@
+# Certified Human-Made (CHM) - Krita Plugin
+
+**Prove your digital art is human-made, not AI-generated.**
+
+A privacy-first verification system for Krita that captures your creative process and generates cryptographic proof of human authorship — **no blockchain, no crypto, no complexity**.
+
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL%203.0-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![Rust](https://img.shields.io/badge/rust-1.92+-orange.svg)](https://www.rust-lang.org)
+[![Krita](https://img.shields.io/badge/krita-5.2+-purple.svg)](https://krita.org)
+
+---
+
+## 🎯 What is CHM?
+
+In the age of AI art generators, **how do you prove you actually drew something?**
+
+CHM is a Krita plugin that:
+- ✅ **Captures** your drawing process (strokes, layers, timing)
+- ✅ **Analyzes** for AI assistance vs. pure human creation
+- ✅ **Generates** tamper-proof certificates with triple timestamps
+- ✅ **Protects** your privacy (only hashes uploaded, never your artwork)
+
+### What You Get
+
+**Proof Certificate** (shareable):
+```json
+{
+  "classification": "PureHumanMade",
+  "confidence": 0.95,
+  "stroke_count": 1247,
+  "session_duration": "3h 42m",
+  "timestamps": {
+    "github": "2025-12-28T10:30:45Z",
+    "archive": "2025-12-28T10:30:47Z",
+    "chm_log": "2025-12-28T10:30:46Z"
+  }
+}
+```
+
+**Your Privacy**: Individual strokes, layer data, and artwork pixels **never leave your computer**.
+
+---
+
+## 🚀 Quick Start
+
+### Installation
+
+**Requirements**:
+- Krita 5.2+ (macOS, Windows, or Linux)
+- Internet connection (for timestamps)
+
+**Install via Krita Resources** (Coming Soon):
+1. Open Krita → Settings → Manage Resources
+2. Search for "Certified Human-Made"
+3. Click Install
+
+**Manual Install** (Current):
+1. Download latest release from [Releases](https://github.com/armstrongl/krita-certified-human-made/releases)
+2. Extract to Krita plugin directory:
+   - **macOS**: `~/Library/Application Support/krita/pykrita/`
+   - **Windows**: `%APPDATA%/krita/pykrita/`
+   - **Linux**: `~/.local/share/krita/pykrita/`
+3. Restart Krita
+4. Enable plugin: Settings → Configure Krita → Python Plugin Manager
+
+### Usage
+
+1. **Start Drawing** → CHM automatically tracks your session
+2. **Finish Artwork** → Tools → CHM → Generate Proof
+3. **Get Certificate** → Timestamped proof saved to `~/.local/share/chm/proofs/`
+4. **Share Proof** → Post on social media, include in portfolio
+
+---
+
+## 🔒 Privacy First
+
+### What Gets Uploaded (Public Timestamps)
+
+- ✅ SHA-256 hash of encrypted session (irreversible)
+- ✅ Classification ("PureHumanMade", "Referenced", etc.)
+- ✅ Aggregated counts (1247 strokes, 5 layers, 3h 42m)
+- ✅ Confidence score (0.95)
+
+### What NEVER Gets Uploaded
+
+- ❌ Your artwork (pixels)
+- ❌ Individual brush strokes (coordinates, pressure, timing)
+- ❌ Layer names or pixel data
+- ❌ Reference images
+- ❌ Any identifiable creative process data
+
+**How It Works**: All session data encrypted locally (AES-256-GCM). Only a cryptographic hash is timestamped publicly. Even we cannot decrypt your creative process.
+
+**Read More**: [Privacy & Data Flow](docs/triple-timestamp-system.md)
+
+---
+
+## 🎨 How It Works
+
+### 1. Capture Drawing Process (Local)
+
+```
+Brush Strokes → Layer Operations → Imports → Plugin Usage
+                         ↓
+              Encrypted Session File
+         (~/.local/share/chm/sessions/)
+```
+
+### 2. Analyze Locally
+
+- **AI Plugin Detection**: Scans for AI tools (Krita AI Diffusion, etc.)
+- **Tracing Analysis**: Compares imports vs. final artwork
+- **Pattern Analysis**: Human vs. AI workflow patterns
+
+**Classification**:
+- `PureHumanMade`: No AI, no tracing
+- `Referenced`: Used reference images (normal!)
+- `AIAssisted`: AI plugins detected
+- `Traced`: High overlap with imported image
+- `MixedMedia`: Combination of above
+
+### 3. Generate Proof & Timestamp
+
+```
+Encrypted Session → SHA-256 Hash → Triple Timestamp
+                                    ├─ GitHub Gist
+                                    ├─ Internet Archive
+                                    └─ CHM Public Log
+```
+
+**Why Triple Timestamp?** (Not Blockchain)
+- ✅ Zero cost (all services free)
+- ✅ No crypto stigma (art community friendly)
+- ✅ Legally recognized (court-admissible)
+- ✅ Three independent sources = robust proof
+
+**Read More**: [Triple Timestamp System](docs/triple-timestamp-system.md)
+
+---
+
+## 📖 Documentation
+
+- **[Architecture](docs/architecture.md)**: System design & data flow
+- **[Privacy Model](docs/triple-timestamp-system.md)**: What data is uploaded
+- **[Krita API Research](docs/krita-api-research.md)**: How event capture works
+- **[Phase 0 Report](docs/phase0-completion-report.md)**: Development progress
+- **[Security Model](docs/security-model.md)**: Threat model & mitigations
+
+---
+
+## 🛠️ Development
+
+### Building from Source
+
+**Requirements**:
+- Rust 1.70+ ([install](https://rustup.rs))
+- Python 3.9+
+- Krita 5.2+
+
+**Build**:
+```bash
+# Clone repository
+git clone https://github.com/armstrongl/krita-certified-human-made.git
+cd krita-certified-human-made
+
+# Build Rust core
+cargo build --release
+
+# Copy plugin to Krita
+cp -r krita-plugin/chm_verifier ~/Library/Application\ Support/krita/pykrita/
+
+# Restart Krita
+```
+
+**Run Tests**:
+```bash
+# Rust tests
+cargo test
+
+# Triple timestamp tests (requires network)
+cargo test --ignored
+
+# Python bindings test
+./tests/test_python_bindings.sh
+```
+
+### Project Structure
+
+```
+krita-certified-human-made/
+├── src/                    # Rust core library
+│   ├── lib.rs             # Module exports
+│   ├── session.rs         # Session management
+│   ├── events.rs          # Event types
+│   ├── proof.rs           # Proof generation
+│   ├── analysis.rs        # Classification engine
+│   ├── crypto.rs          # Encryption & signatures
+│   ├── error.rs           # Error handling
+│   └── python_bindings.rs # PyO3 Python API
+├── krita-plugin/          # Python Krita plugin
+│   └── chm_verifier/      # Main plugin
+├── tests/                 # Rust + integration tests
+├── docs/                  # Documentation
+└── Cargo.toml            # Rust dependencies
+```
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+### Areas Needing Help
+
+- **Testing**: Beta test on different OS/Krita versions
+- **Documentation**: Improve user guides, add translations
+- **AI Plugin Detection**: Maintain registry of AI plugins
+- **Tracing Detection**: Improve image comparison algorithms
+- **UI/UX**: Polish PyQt5 dialogs
+
+---
+
+## 📜 License
+
+GPL-3.0 (same as Krita) - see [LICENSE](LICENSE)
+
+This ensures compatibility with Krita's licensing and potential future integration.
+
+---
+
+## 🙏 Acknowledgments
+
+- **Krita Team**: Amazing open-source painting software
+- **GitHub**: Free git hosting & timestamp infrastructure
+- **Internet Archive**: Permanent archival & Wayback Machine
+- **Art Community**: Feedback on privacy & usability
+
+---
+
+## 📬 Contact
+
+- **Issues**: [GitHub Issues](https://github.com/armstrongl/krita-certified-human-made/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/armstrongl/krita-certified-human-made/discussions)
+- **Krita Artists**: [Forum Thread](https://krita-artists.org) (coming soon)
+
+---
+
+## 🗺️ Roadmap
+
+### v0.1.0-alpha (Current - Phase 0 Complete ✅)
+- [x] Development environment setup
+- [x] Krita plugin proof-of-concept
+- [x] Triple timestamp system validated
+- [x] PyO3 bindings working
+- [x] Krita API research complete
+
+### v0.2.0-alpha (Phase 1 - In Progress)
+- [ ] Event capture implementation
+- [ ] Session management
+- [ ] Proof generation
+- [ ] Basic UI
+
+### v0.3.0-beta (Phase 2)
+- [ ] Classification engine
+- [ ] AI plugin detection
+- [ ] Tracing analysis
+- [ ] Comprehensive testing
+
+### v1.0.0 (Phase 3)
+- [ ] Public release
+- [ ] Krita Resources submission
+- [ ] Community feedback integration
+- [ ] Security audit
+
+### Future
+- [ ] Multi-language support
+- [ ] Advanced pattern analysis
+- [ ] Krita core integration proposal
+
+---
+
+**Made with ❤️ for artists fighting AI art misrepresentation**
+
+*Your creativity deserves proof.*
