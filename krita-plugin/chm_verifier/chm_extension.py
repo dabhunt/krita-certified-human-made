@@ -22,14 +22,19 @@ except ImportError as e:
     CHM_AVAILABLE = False
     print(f"CHM library not available: {e}")
 
+from .chm_session_manager import CHMSessionManager
+from .event_capture import EventCapture
+
 
 class CHMExtension(Extension):
     """Main extension class for CHM Verifier plugin"""
     
     def __init__(self, parent):
         super().__init__(parent)
-        self.active_sessions = {}  # Map document pointer to CHMSession
         self.DEBUG_LOG = True  # Enable debug logging for MVP
+        self.session_manager = None
+        self.event_capture = None
+        self.capture_active = False
         
     def setup(self):
         """Called when Krita initializes the plugin"""
@@ -53,17 +58,63 @@ class CHMExtension(Extension):
         test_msg = chm.hello_from_rust()
         if self.DEBUG_LOG:
             print(f"CHM Verifier: {test_msg}")
+        
+        # Initialize session manager and event capture
+        self.session_manager = CHMSessionManager(debug_log=self.DEBUG_LOG)
+        self.event_capture = EventCapture(
+            self.session_manager,
+            debug_log=self.DEBUG_LOG
+        )
+        
+        # Auto-start event capture
+        self.start_capture()
+        
+        self._log("CHM Verifier initialized successfully")
     
     def createActions(self, window):
         """Create menu actions for the plugin"""
         if self.DEBUG_LOG:
             print("CHM Verifier: Creating actions")
         
-        # TODO: Add menu actions in next task
+        # TODO: Add menu actions in Task 1.8
         # - Start/Stop Recording
         # - View Proof
         # - Export with CHM Certification
         pass
+    
+    def start_capture(self):
+        """Start event capture"""
+        if self.capture_active:
+            self._log("Event capture already active")
+            return
+        
+        if not self.event_capture:
+            self._log("Error: EventCapture not initialized")
+            return
+        
+        try:
+            self.event_capture.start_capture()
+            self.capture_active = True
+            self._log("Event capture started")
+        except Exception as e:
+            self._log(f"Error starting event capture: {e}")
+    
+    def stop_capture(self):
+        """Stop event capture"""
+        if not self.capture_active:
+            self._log("Event capture not active")
+            return
+        
+        if not self.event_capture:
+            self._log("Error: EventCapture not initialized")
+            return
+        
+        try:
+            self.event_capture.stop_capture()
+            self.capture_active = False
+            self._log("Event capture stopped")
+        except Exception as e:
+            self._log(f"Error stopping event capture: {e}")
     
     def _log(self, message):
         """Debug logging helper"""
