@@ -33,12 +33,14 @@ export PYO3_CROSS_PYTHON_VERSION="$PYTHON_VERSION"
 # Tell PyO3 we're cross-compiling (even though we're not, this skips Python execution)
 export PYO3_CROSS="1"
 
-# Provide library path for linking
-export RUSTFLAGS="-C link-args=-L$KRITA_PYTHON_PATH/lib -C link-args=-Wl,-rpath,$KRITA_PYTHON_PATH/lib"
+# macOS Python extension modules use -undefined dynamic_lookup
+# This allows the symbols to be resolved at runtime when Python loads the module
+# This is the standard way PyO3 extension modules work on macOS
+export RUSTFLAGS="-C link-arg=-undefined -C link-arg=dynamic_lookup"
 
 echo "   PYO3_CROSS_LIB_DIR: $PYO3_CROSS_LIB_DIR"
 echo "   PYO3_CROSS_PYTHON_VERSION: $PYO3_CROSS_PYTHON_VERSION"
-echo "   RUSTFLAGS: $RUSTFLAGS"
+echo "   Using macOS extension module linking (dynamic_lookup)"
 echo ""
 
 # Step 3: Clean previous builds
