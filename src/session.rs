@@ -1,6 +1,8 @@
+use crate::analysis::Classification;
+use crate::crypto::{self, EncryptionKey, SigningKey};
 use crate::error::{CHMError, Result};
 use crate::events::SessionEvent;
-use crate::proof::SessionProof;
+use crate::proof::{EventSummary, SessionProof};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -41,7 +43,8 @@ pub struct CHMSession {
     pub events: Vec<SessionEvent>,
     pub metadata: SessionMetadata,
     pub config: SessionConfig,
-    encryption_key: Option<Vec<u8>>, // Will be properly implemented with AES-GCM
+    encryption_key: EncryptionKey,
+    signing_key: SigningKey,
     pub is_finalized: bool,
 }
 
@@ -53,6 +56,9 @@ impl CHMSession {
 
     /// Create a new session with custom configuration
     pub fn with_config(config: SessionConfig) -> Result<Self> {
+        let encryption_key = EncryptionKey::generate()?;
+        let signing_key = SigningKey::generate()?;
+        
         let session = Self {
             id: Uuid::new_v4(),
             start_time: Utc::now(),
@@ -65,12 +71,18 @@ impl CHMSession {
                 os_info: None,
             },
             config,
-            encryption_key: None, // Will generate in crypto module
+            encryption_key,
+            signing_key,
             is_finalized: false,
         };
 
         log::info!("Created new CHM session: {}", session.id);
         Ok(session)
+    }
+
+    /// Get the public key for this session (for verification)
+    pub fn public_key_base64(&self) -> String {
+        self.signing_key.public_key_base64()
     }
 
     /// Set session metadata
@@ -187,9 +199,172 @@ impl CHMSession {
             self.events.len()
         );
 
-        // TODO: Implement full proof generation in proof module
-        // For now, return a placeholder
-        Err(CHMError::session("Proof generation not yet implemented"))
+        // 1. Serialize events to JSON
+        let events_json = serde_json::to_vec(&self.events)
+            .map_err(|e| CHMError::serialization(format!("Failed to serialize events: {}", e)))?;
+
+        // 2. Encrypt events
+        let encrypted_events = crypto::encrypt_data(&events_json, &self.encryption_key)?;
+        
+        // 3. Hash encrypted events
+        let encrypted_json = serde_json::to_vec(&encrypted_events)
+            .map_err(|e| CHMError::serialization(format!("Failed to serialize encrypted data: {}", e)))?;
+        let encrypted_events_hash = crypto::sha256_hash(&encrypted_json);
+
+        // 4. Analyze events for classification
+        let classification = self.analyze_classification();
+        let confidence = self.calculate_confidence(&classification);
+
+        // 5. Create event summary (aggregated, not raw events)
+        let event_summary = self.create_event_summary();
+
+        // 6. Create proof struct (without signature yet)
+        let proof = SessionProof {
+            version: "1.0".to_string(),
+            session_id: self.id,
+            artist_public_key: self.signing_key.public_key_base64(),
+            classification,
+            confidence,
+            event_summary,
+            encrypted_events_hash: encrypted_events_hash.clone(),
+            signature: String::new(), // Will be filled after signing
+            triple_timestamp_receipt: None,
+            timestamp: Utc::now(),
+            document_name: self.metadata.document_name.clone(),
+        };
+
+        // 7. Sign the proof (sign all fields except signature itself)
+        let proof_json_for_signing = serde_json::to_vec(&(
+            &proof.version,
+            &proof.session_id,
+            &proof.artist_public_key,
+            &proof.classification,
+            proof.confidence,
+            &proof.event_summary,
+            &encrypted_events_hash,
+            &proof.timestamp,
+        ))
+        .map_err(|e| CHMError::serialization(format!("Failed to serialize proof for signing: {}", e)))?;
+
+        let signature = self.signing_key.sign_base64(&proof_json_for_signing)?;
+
+        // 8. Return proof with signature
+        let final_proof = SessionProof {
+            signature,
+            ..proof
+        };
+
+        log::info!(
+            "Proof generated successfully for session {}: {:?} (confidence: {:.1}%)",
+            self.id,
+            final_proof.classification,
+            final_proof.confidence * 100.0
+        );
+
+        Ok(final_proof)
+    }
+
+    /// Analyze events to determine classification
+    fn analyze_classification(&self) -> Classification {
+        // Check for AI plugins
+        let has_ai_plugin = self.events.iter().any(|e| {
+            if let SessionEvent::PluginUsed { plugin_type, .. } = e {
+                plugin_type.contains("AI")
+            } else {
+                false
+            }
+        });
+
+        if has_ai_plugin {
+            return Classification::AIAssisted;
+        }
+
+        // Check for imports
+        let has_imports = self.events.iter().any(|e| matches!(e, SessionEvent::ImportEvent { .. }));
+
+        if has_imports {
+            // For MVP, classify as Referenced if imports exist
+            // Phase 2 will add tracing detection and visibility checking
+            return Classification::Referenced;
+        }
+
+        // No AI plugins, no imports = Pure human-made
+        Classification::PureHumanMade
+    }
+
+    /// Calculate confidence score based on session patterns
+    fn calculate_confidence(&self, classification: &Classification) -> f64 {
+        let mut confidence = classification.base_confidence();
+
+        // Adjust based on event count
+        if self.events.len() < 10 {
+            confidence *= 0.5; // Very few events = low confidence
+        } else if self.events.len() < 50 {
+            confidence *= 0.8; // Some events but not many
+        }
+
+        // Adjust based on session duration
+        let duration_secs = self.duration_secs();
+        if duration_secs < 60 {
+            confidence *= 0.7; // Very short session
+        }
+
+        // Boost for high undo/redo frequency (indicates human behavior)
+        let undo_count = self.events.iter()
+            .filter(|e| matches!(e, SessionEvent::UndoRedo { .. }))
+            .count();
+        
+        if undo_count > 0 {
+            let undo_rate = undo_count as f64 / self.events.len() as f64;
+            if undo_rate > 0.05 && undo_rate < 0.20 {
+                // Healthy undo rate (5-20%)
+                confidence *= 1.1;
+            }
+        }
+
+        // Clamp to 0.0-1.0
+        confidence.clamp(0.0, 1.0)
+    }
+
+    /// Create aggregated event summary (not raw events for privacy)
+    fn create_event_summary(&self) -> EventSummary {
+        let stroke_count = self.events.iter()
+            .filter(|e| matches!(e, SessionEvent::Stroke { .. }))
+            .count();
+
+        let layer_count = self.events.iter()
+            .filter(|e| matches!(e, SessionEvent::LayerAdded { .. }))
+            .count();
+
+        let imports_count = self.events.iter()
+            .filter(|e| matches!(e, SessionEvent::ImportEvent { .. }))
+            .count();
+
+        let undo_redo_count = self.events.iter()
+            .filter(|e| matches!(e, SessionEvent::UndoRedo { .. }))
+            .count();
+
+        let plugins_used: Vec<String> = self.events.iter()
+            .filter_map(|e| {
+                if let SessionEvent::PluginUsed { plugin_name, .. } = e {
+                    Some(plugin_name.clone())
+                } else {
+                    None
+                }
+            })
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        EventSummary {
+            total_events: self.events.len(),
+            stroke_count,
+            layer_count,
+            session_duration_secs: self.duration_secs() as u64,
+            plugins_used,
+            imports_count,
+            undo_redo_count,
+        }
     }
 
     /// Get current event count

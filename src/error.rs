@@ -53,5 +53,16 @@ impl CHMError {
     pub fn config(msg: impl Into<String>) -> Self {
         CHMError::ConfigError(msg.into())
     }
+
+    pub fn io(msg: impl Into<String>) -> Self {
+        CHMError::IoError(std::io::Error::new(std::io::ErrorKind::Other, msg.into()))
+    }
+
+    pub fn serialization(msg: impl Into<String>) -> Self {
+        CHMError::SerializationError(serde_json::Error::io(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            msg.into()
+        )))
+    }
 }
 
