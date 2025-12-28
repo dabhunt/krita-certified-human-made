@@ -8,6 +8,19 @@ echo "🔧 Building CHM Library for Krita"
 echo "=================================="
 echo ""
 
+# Load Rust environment if not already loaded
+if ! command -v cargo &> /dev/null; then
+    echo "Loading Rust environment..."
+    if [ -f "$HOME/.cargo/env" ]; then
+        source "$HOME/.cargo/env"
+        echo "✅ Rust environment loaded"
+    else
+        echo "❌ Rust not found! Please install Rust: https://rustup.rs/"
+        exit 1
+    fi
+    echo ""
+fi
+
 # Step 1: Detect Krita's Python version
 KRITA_PYTHON_PATH="/Applications/krita.app/Contents/Frameworks/Python.framework/Versions/3.10"
 
