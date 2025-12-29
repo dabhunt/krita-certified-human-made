@@ -833,6 +833,10 @@ class EventCapture:
             # Only check for changes if document is modified
             if current_modified:
                 try:
+                    # ENHANCED DIAGNOSTIC LOGGING (Step-by-step logic trace)
+                    if self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
+                        self._log(f"[DIAG-1] Doc is modified, checking for actual content changes...")
+                    
                     # Get lightweight hash of document content
                     # Use thumbnail() method - fast and sufficient for change detection
                     import hashlib
@@ -840,17 +844,45 @@ class EventCapture:
                     # Get 100x100 thumbnail (fast to compute)
                     thumbnail = doc.thumbnail(100, 100)
                     
+                    if self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
+                        thumb_status = "exists" if thumbnail else "None"
+                        self._log(f"[DIAG-2] Thumbnail retrieved: {thumb_status}")
+                    
                     if thumbnail:
-                        # Convert QImage to bytes for hashing
-                        # Using simple width*height as proxy (very fast)
-                        thumbnail_hash = f"{thumbnail.width()}x{thumbnail.height()}x{thumbnail.byteCount()}"
+                        # DIAGNOSTIC: Check if metadata-based hash is actually changing
+                        metadata_hash = f"{thumbnail.width()}x{thumbnail.height()}x{thumbnail.byteCount()}"
                         
-                        # For more accurate detection, hash actual pixel data
-                        # But this is slower - use only if needed
-                        # thumbnail_bytes = thumbnail.bits().asstring(thumbnail.byteCount())
-                        # thumbnail_hash = hashlib.md5(thumbnail_bytes).hexdigest()[:16]
+                        if self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
+                            self._log(f"[DIAG-3] Thumbnail metadata hash: {metadata_hash}")
+                        
+                        # ACTUAL FIX: Hash the pixel data, not just metadata
+                        # Metadata (width/height/byteCount) is CONSTANT for same thumbnail size!
+                        try:
+                            # Get actual pixel data from thumbnail
+                            from PyQt5.QtCore import QBuffer, QIODevice, QByteArray
+                            
+                            buffer = QBuffer()
+                            buffer.open(QIODevice.WriteOnly)
+                            thumbnail.save(buffer, "PNG")  # Save to memory buffer
+                            thumbnail_bytes = buffer.data().data()  # Get bytes
+                            
+                            # Hash the actual pixel content
+                            thumbnail_hash = hashlib.md5(thumbnail_bytes).hexdigest()[:16]
+                            
+                            if self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
+                                self._log(f"[DIAG-4] Pixel content hash: {thumbnail_hash}")
+                            
+                        except Exception as hash_error:
+                            # Fallback to metadata hash if pixel hashing fails
+                            thumbnail_hash = metadata_hash
+                            if self.DEBUG_LOG:
+                                self._log(f"[DIAG-4-ERROR] Pixel hash failed, using metadata: {hash_error}")
                         
                         previous_hash = self.doc_content_hash.get(doc_id)
+                        
+                        if self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
+                            match_status = "MATCH" if previous_hash == thumbnail_hash else "DIFFERENT"
+                            self._log(f"[DIAG-5] Hash comparison: prev={previous_hash[:16] if previous_hash else 'None'}... vs current={thumbnail_hash[:16]}... → {match_status}")
                         
                         # Detect ACTUAL change in content
                         if previous_hash != thumbnail_hash:
@@ -858,12 +890,11 @@ class EventCapture:
                             self.doc_content_hash[doc_id] = thumbnail_hash
                             
                             if self.DEBUG_LOG:
-                                self._log(f"[BFROS-STROKE] ✓ Content changed detected! (hash: {thumbnail_hash})")
+                                self._log(f"[BFROS-STROKE] ✓ Content CHANGED! New stroke detected (hash changed)")
                         else:
-                            # Content unchanged - user is idle or working on same area
-                            # Don't record phantom strokes
+                            # Content unchanged - user is idle
                             if self.DEBUG_LOG and self._mod_poll_count % 40 == 0:
-                                self._log(f"[BFROS-STROKE] Content unchanged (no new strokes)")
+                                self._log(f"[BFROS-STROKE] Content unchanged (hash identical, no new strokes)")
                     
                 except Exception as e:
                     # Fallback: If thumbnail fails, use transition detection only

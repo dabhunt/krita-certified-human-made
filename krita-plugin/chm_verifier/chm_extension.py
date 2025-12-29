@@ -23,7 +23,6 @@ except ImportError as e:
 from .chm_session_manager import CHMSessionManager
 from .event_capture import EventCapture
 from .plugin_monitor import PluginMonitor
-from .dependency_checker import check_dependencies, show_dependency_warning
 from .api_client import CHMApiClient
 from .timestamp_service import TripleTimestampService
 from .path_preferences import PathPreferences
@@ -48,17 +47,6 @@ class CHMExtension(Extension):
         self._debug_log("=" * 60)
         self._debug_log("CHM: setup() METHOD CALLED - THIS IS THE MAIN ENTRY POINT")
         self._debug_log("=" * 60)
-        
-        # Check dependencies (Task 1.11)
-        dep_status = check_dependencies()
-        if dep_status['missing']:
-            # Show warning but continue (graceful degradation)
-            self._log(f"⚠️  Missing dependencies: {', '.join(dep_status['missing'])}")
-            self._log("    Perceptual hashing disabled, file hash only")
-            # Only show dialog once per session
-            if not hasattr(self, '_dependency_warning_shown'):
-                show_dependency_warning(dep_status['missing'])
-                self._dependency_warning_shown = True
         
         if not CHM_AVAILABLE:
             QMessageBox.warning(
@@ -231,8 +219,8 @@ class CHMExtension(Extension):
             
             self._log(f"[EXPORT] ✓ Image exported successfully")
             
-            # Finalize session WITH artwork path (computes dual-hash: file_hash + perceptual_hash)
-            self._log("[EXPORT] Finalizing session with dual-hash computation...")
+            # Finalize session WITH artwork path (computes file hash for duplicate detection)
+            self._log("[EXPORT] Finalizing session with file hash computation...")
             proof = self.session_manager.finalize_session(
                 doc, 
                 artwork_path=filename,  # ← Pass artwork path for dual-hash
@@ -242,10 +230,10 @@ class CHMExtension(Extension):
             if not proof:
                 raise Exception("Session finalization returned None")
             
-            self._log(f"[EXPORT] Session finalized, proof generated with dual-hash")
+            self._log(f"[EXPORT] Session finalized, proof generated with file hash")
             
-            # Save proof JSON (for web app submission - contains dual-hash for verification)
-            # The web app will use file_hash and perceptual_hash from this proof to store in DB
+            # Save proof JSON (for web app submission - contains file hash for duplicate detection)
+            # The web app will use file_hash from this proof to store in DB
             import json
             proof_filename = filename.replace('.png', '_proof.json').replace('.jpg', '_proof.json').replace('.jpeg', '_proof.json')
             proof_dict = proof.to_dict()
@@ -254,14 +242,11 @@ class CHMExtension(Extension):
             
             self._log(f"[EXPORT] ✓ Proof saved to {proof_filename}")
             
-            # Log dual-hash results
+            # Log file hash result
             fhash = proof_dict.get('file_hash', 'N/A')
-            phash = proof_dict.get('perceptual_hash', 'N/A')
             fhash_display = fhash[:20] + "..." if fhash and len(fhash) > 20 else fhash
-            phash_display = phash[:20] + "..." if phash and len(phash) > 20 else phash
-            self._log(f"[EXPORT] ✓ Dual-hash computed:")
+            self._log(f"[EXPORT] ✓ File hash computed:")
             self._log(f"[EXPORT]   • File hash (SHA-256): {fhash_display}")
-            self._log(f"[EXPORT]   • Perceptual hash (aHash): {phash_display}")
             
             # Check for duplicate artwork (Task 1.12)
             duplicate = None

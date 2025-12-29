@@ -55,6 +55,9 @@ ENV/
 sessions/
 proofs/
 
+# Vendor dependencies (PIL, imagehash, numpy, scipy - removed in favor of file-hash-only)
+krita-plugin/chm_verifier/vendor/
+
 # Secrets
 *.key
 *.pem

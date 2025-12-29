@@ -207,31 +207,17 @@ class CHMSession:
         events_json = json.dumps(self.events, sort_keys=True)
         events_hash = hashlib.sha256(events_json.encode()).hexdigest()
         
-        # Dual-hash computation if artwork path provided
+        # File hash computation if artwork path provided
         file_hash = None
-        perceptual_hash = None
         
         if artwork_path:
             import os
             if os.path.exists(artwork_path):
                 try:
-                    # 1. File hash (SHA-256 of exact bytes)
+                    # File hash (SHA-256 of exact bytes) - sufficient for duplicate detection
                     with open(artwork_path, 'rb') as f:
                         artwork_bytes = f.read()
                         file_hash = hashlib.sha256(artwork_bytes).hexdigest()
-                    
-                    # 2. Perceptual hash (survives re-encoding)
-                    try:
-                        from PIL import Image
-                        import imagehash
-                        
-                        img = Image.open(artwork_path)
-                        phash = imagehash.average_hash(img, hash_size=16)
-                        perceptual_hash = str(phash)
-                    except ImportError:
-                        perceptual_hash = "unavailable_missing_dependencies"
-                    except Exception as e:
-                        perceptual_hash = f"error_{str(e)[:20]}"
                         
                 except Exception as e:
                     print(f"[CHM-FALLBACK] Warning: Failed to compute file hash: {e}")
@@ -252,7 +238,6 @@ class CHMSession:
             },
             "events_hash": events_hash,
             "file_hash": file_hash if file_hash else "placeholder_no_artwork_provided",
-            "perceptual_hash": perceptual_hash if perceptual_hash else "placeholder_no_artwork_provided",
             "classification": self._classify(),
             "metadata": self.metadata
         }
