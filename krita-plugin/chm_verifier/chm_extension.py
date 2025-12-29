@@ -91,7 +91,6 @@ class CHMExtension(Extension):
         self.session_manager = CHMSessionManager(debug_log=self.DEBUG_LOG)
         self.event_capture = EventCapture(
             self.session_manager,
-            session_storage=self.session_storage,  # Pass storage for persistence
             debug_log=self.DEBUG_LOG
         )
         
