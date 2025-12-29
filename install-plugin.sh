@@ -98,8 +98,13 @@ if [ "$choice" = "1" ]; then
         rm -rf "$PLUGIN_DIR/chm_verifier"
     fi
     
-    ln -s "$(pwd)/krita-plugin/chm_verifier" "$PLUGIN_DIR/chm_verifier"
+    # Get absolute path to avoid issues
+    PLUGIN_SOURCE="$(cd "$(pwd)/krita-plugin/chm_verifier" && pwd)"
+    
+    # Create symlink using absolute path
+    ln -s "$PLUGIN_SOURCE" "$PLUGIN_DIR/chm_verifier"
     echo "✅ Plugin symlinked to: $PLUGIN_DIR/chm_verifier"
+    echo "   Source: $PLUGIN_SOURCE"
     echo "   (Changes to plugin files will auto-update)"
 else
     # Copy method
