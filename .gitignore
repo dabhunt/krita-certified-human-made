@@ -58,3 +58,6 @@ secrets.json
 # Logs
 *.log
 
+# Documentation (internal working docs, not for public repo)
+/docs/
+
