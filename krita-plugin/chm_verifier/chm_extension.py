@@ -26,6 +26,7 @@ from .plugin_monitor import PluginMonitor
 from .dependency_checker import check_dependencies, show_dependency_warning
 from .api_client import CHMApiClient
 from .timestamp_service import TripleTimestampService
+from .path_preferences import PathPreferences
 
 
 class CHMExtension(Extension):
@@ -94,6 +95,10 @@ class CHMExtension(Extension):
         
         # Initialize timestamp service (Task 1.13)
         self.timestamp_service = TripleTimestampService(debug_log=self.DEBUG_LOG)
+        
+        # Initialize path preferences
+        self.path_prefs = PathPreferences()
+        self._log(f"Path preferences initialized (default: {self.path_prefs.default_documents_path})")
         
         # Auto-start event capture
         self.start_capture()
@@ -184,17 +189,25 @@ class CHMExtension(Extension):
         
         self._log(f"[EXPORT] Session found: {session.id}, events: {session.event_count}")
         
+        # Get default path from preferences (Documents folder or last used location)
+        default_path = self.path_prefs.get_default_export_filename(doc.name())
+        self._log(f"[EXPORT] Default save path: {default_path}")
+        
         # Show file save dialog
         filename, _ = QFileDialog.getSaveFileName(
             None,
             "Export with CHM Proof",
-            doc.name().replace(".kra", ".png") if doc.name() else "artwork.png",
+            default_path,
             "PNG Images (*.png);;JPEG Images (*.jpg *.jpeg)"
         )
         
         if not filename:
             self._log("[EXPORT] User cancelled")
             return
+        
+        # Remember this directory for next time
+        self.path_prefs.save_last_export_directory(filename)
+        self._log(f"[EXPORT] Saved directory preference: {os.path.dirname(filename)}")
         
         self._log(f"[EXPORT] Export path: {filename}")
         

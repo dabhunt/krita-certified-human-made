@@ -10,6 +10,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt
 import json
+from .path_preferences import PathPreferences
 
 
 class VerificationDialog(QDialog):
@@ -17,6 +18,9 @@ class VerificationDialog(QDialog):
     
     def __init__(self, proof_data=None, parent=None):
         super().__init__(parent)
+        
+        # Initialize path preferences
+        self.path_prefs = PathPreferences()
         
         # Handle both CHMProof objects and dictionaries
         if proof_data:
@@ -173,16 +177,24 @@ class VerificationDialog(QDialog):
     def save_json(self):
         """Save proof JSON to file"""
         from PyQt5.QtWidgets import QFileDialog
+        import os
+        
+        # Get default path from preferences (Documents folder or last used location)
+        default_path = self.path_prefs.get_default_proof_filename()
         
         filename, _ = QFileDialog.getSaveFileName(
             self,
             "Save Proof JSON",
-            "",
+            default_path,
             "JSON Files (*.json)"
         )
         
         if filename:
             with open(filename, 'w') as f:
                 f.write(self.proof_text.toPlainText())
+            
+            # Remember this directory for next time
+            self.path_prefs.save_last_proof_directory(filename)
+            
             # TODO: Show success message
 
