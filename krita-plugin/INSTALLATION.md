@@ -40,6 +40,9 @@ mkdir -p "$KRITA_PLUGIN_DIR"
 
 # Create symlink to your plugin
 ln -s "/Users/david/Documents/GitHub/krita-certified-human-made/krita-plugin/chm_verifier" "$KRITA_PLUGIN_DIR/chm_verifier"
+
+# IMPORTANT: Copy .desktop file to pykrita root (not inside plugin folder!)
+cp "/Users/david/Documents/GitHub/krita-certified-human-made/krita-plugin/chm_verifier.desktop" "$KRITA_PLUGIN_DIR/chm_verifier.desktop"
 ```
 
 **Option B: Copy (Alternative)**
@@ -53,6 +56,9 @@ mkdir -p "$KRITA_PLUGIN_DIR"
 
 # Copy the entire plugin directory
 cp -r krita-plugin/chm_verifier "$KRITA_PLUGIN_DIR/"
+
+# IMPORTANT: Copy .desktop file to pykrita root (not inside plugin folder!)
+cp krita-plugin/chm_verifier.desktop "$KRITA_PLUGIN_DIR/chm_verifier.desktop"
 ```
 
 ### Step 4: Enable the Plugin in Krita

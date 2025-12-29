@@ -30,6 +30,8 @@ cp target/release/libchm.dylib krita-plugin/chm_verifier/lib/chm.so
 ```bash
 mkdir -p "$HOME/Library/Application Support/krita/pykrita"
 ln -s "$(pwd)/krita-plugin/chm_verifier" "$HOME/Library/Application Support/krita/pykrita/chm_verifier"
+# CRITICAL: .desktop file must be in pykrita root, not inside plugin folder!
+cp krita-plugin/chm_verifier.desktop "$HOME/Library/Application Support/krita/pykrita/chm_verifier.desktop"
 ```
 
 ### Enable in Krita
@@ -54,7 +56,10 @@ ln -s "$(pwd)/krita-plugin/chm_verifier" "$HOME/Library/Application Support/krit
 
 **Plugin not in list?**
 - Check the symlink exists: `ls -l "$HOME/Library/Application Support/krita/pykrita/chm_verifier"`
-- Verify `.desktop` file exists in plugin directory
+- **CRITICAL:** Verify `.desktop` file exists **in pykrita root** (not inside plugin folder!):
+  ```bash
+  ls -l "$HOME/Library/Application Support/krita/pykrita/chm_verifier.desktop"
+  ```
 
 **"CHM library not available" error?**
 - Rebuild: `cargo build --release`

@@ -103,6 +103,10 @@ if [ "$choice" = "1" ]; then
     
     # Create symlink using absolute path
     ln -s "$PLUGIN_SOURCE" "$PLUGIN_DIR/chm_verifier"
+    
+    # Copy .desktop file (must be in pykrita root, not inside plugin folder)
+    cp krita-plugin/chm_verifier.desktop "$PLUGIN_DIR/chm_verifier.desktop"
+    
     echo "✅ Plugin symlinked to: $PLUGIN_DIR/chm_verifier"
     echo "   Source: $PLUGIN_SOURCE"
     echo "   (Changes to plugin files will auto-update)"
@@ -114,6 +118,10 @@ else
     fi
     
     cp -r krita-plugin/chm_verifier "$PLUGIN_DIR/"
+    
+    # Copy .desktop file (must be in pykrita root, not inside plugin folder)
+    cp krita-plugin/chm_verifier.desktop "$PLUGIN_DIR/chm_verifier.desktop"
+    
     echo "✅ Plugin copied to: $PLUGIN_DIR/chm_verifier"
 fi
 
