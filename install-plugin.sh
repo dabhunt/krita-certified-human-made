@@ -108,6 +108,7 @@ if [ "$choice" = "1" ]; then
     cp krita-plugin/chm_verifier.desktop "$PLUGIN_DIR/chm_verifier.desktop"
     
     echo "✅ Plugin symlinked to: $PLUGIN_DIR/chm_verifier"
+    echo "   Manual accessible via symlink at: $PLUGIN_DIR/chm_verifier/Manual.html"
     echo "   Source: $PLUGIN_SOURCE"
     echo "   (Changes to plugin files will auto-update)"
 else
@@ -123,6 +124,7 @@ else
     cp krita-plugin/chm_verifier.desktop "$PLUGIN_DIR/chm_verifier.desktop"
     
     echo "✅ Plugin copied to: $PLUGIN_DIR/chm_verifier"
+    echo "   Manual included at: $PLUGIN_DIR/chm_verifier/Manual.html"
 fi
 
 echo ""
