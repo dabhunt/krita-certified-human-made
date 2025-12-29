@@ -184,16 +184,7 @@ class CHMExtension(Extension):
             if ai_plugins:
                 self._log(f"[EXPORT] ⚠️  {len(ai_plugins)} AI plugin(s) are enabled - artwork will be classified as AIAssisted")
             
-            # Finalize session (this generates the proof)
-            self._log("[EXPORT] Finalizing session...")
-            proof = self.session_manager.finalize_session(doc, ai_plugins=ai_plugins)
-            
-            if not proof:
-                raise Exception("Session finalization returned None")
-            
-            self._log(f"[EXPORT] Session finalized, proof generated")
-            
-            # Export image via Krita
+            # Export image FIRST (so we can compute dual-hash during finalization)
             # Note: exportImage() uses default export settings (no configuration needed)
             self._log(f"[EXPORT] Exporting image to {filename}...")
             success = doc.exportImage(filename, InfoObject())
@@ -203,14 +194,29 @@ class CHMExtension(Extension):
             
             self._log(f"[EXPORT] ✓ Image exported successfully")
             
-            # TODO Phase 2B: Embed metadata in exported file
-            # For now, save proof JSON separately
+            # Finalize session WITH artwork path (computes dual-hash: file_hash + perceptual_hash)
+            self._log("[EXPORT] Finalizing session with dual-hash computation...")
+            proof = self.session_manager.finalize_session(
+                doc, 
+                artwork_path=filename,  # ← Pass artwork path for dual-hash
+                ai_plugins=ai_plugins
+            )
+            
+            if not proof:
+                raise Exception("Session finalization returned None")
+            
+            self._log(f"[EXPORT] Session finalized, proof generated with dual-hash")
+            
+            # Save proof JSON (for web app submission - contains dual-hash for verification)
+            # The web app will use file_hash and perceptual_hash from this proof to store in DB
             import json
-            proof_filename = filename.replace('.png', '_proof.json').replace('.jpg', '_proof.json')
+            proof_filename = filename.replace('.png', '_proof.json').replace('.jpg', '_proof.json').replace('.jpeg', '_proof.json')
+            proof_dict = proof.to_dict()
             with open(proof_filename, 'w') as f:
-                json.dump(proof.to_dict(), f, indent=2)
+                json.dump(proof_dict, f, indent=2)
             
             self._log(f"[EXPORT] ✓ Proof saved to {proof_filename}")
+            self._log(f"[EXPORT] ✓ Dual-hash computed: file_hash={proof_dict.get('file_hash', 'N/A')[:20]}..., perceptual_hash={proof_dict.get('perceptual_hash', 'N/A')[:20]}...")
             
             # Show success message
             QMessageBox.information(

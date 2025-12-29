@@ -171,52 +171,63 @@
          self.inner.duration_secs()
      }
      
-     /// Finalize the session and generate a proof
-     /// 
-     /// Returns:
-     ///     dict: Session proof data including classification and timestamps
-     fn finalize(&mut self) -> PyResult<PyObject> {
-         // Create a new session and swap it with the current one (finalize consumes self)
-         let session = std::mem::replace(
-             &mut self.inner,
-             CHMSession::new().map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?
-         );
-         
-         let proof = session
-             .finalize()
-             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-         
-         // Convert proof to Python dict
-         Python::with_gil(|py| {
-             let dict = PyDict::new(py);
-             dict.set_item("version", proof.version.clone())?;
-             dict.set_item("session_id", proof.session_id.to_string())?;
-             dict.set_item("encrypted_events_hash", proof.encrypted_events_hash.clone())?;
-             dict.set_item("classification", format!("{:?}", proof.classification))?;
-             dict.set_item("confidence", proof.confidence)?;
-             dict.set_item("timestamp", proof.timestamp.to_rfc3339())?;
-             dict.set_item("signature", proof.signature.clone())?;
-             dict.set_item("artist_public_key", proof.artist_public_key.clone())?;
-             
-             // Add event summary
-             let summary_dict = PyDict::new(py);
-             summary_dict.set_item("total_events", proof.event_summary.total_events)?;
-             summary_dict.set_item("stroke_count", proof.event_summary.stroke_count)?;
-             summary_dict.set_item("layer_count", proof.event_summary.layer_count)?;
-             summary_dict.set_item("session_duration_secs", proof.event_summary.session_duration_secs)?;
-             summary_dict.set_item("imports_count", proof.event_summary.imports_count)?;
-             summary_dict.set_item("undo_redo_count", proof.event_summary.undo_redo_count)?;
-             summary_dict.set_item("plugins_used", proof.event_summary.plugins_used.clone())?;
-             dict.set_item("event_summary", summary_dict)?;
-             
-             // Add optional fields
-             if let Some(ref doc_name) = proof.document_name {
-                 dict.set_item("document_name", doc_name)?;
-             }
-             
-             Ok(dict.into())
-         })
-     }
+    /// Finalize the session and generate a proof
+    /// 
+    /// Args:
+    ///     artwork_path (str, optional): Path to the exported artwork file.
+    ///         If provided, computes file_hash and perceptual_hash for dual-hash verification.
+    /// 
+    /// Returns:
+    ///     dict: Session proof data including classification, timestamps, and hashes
+    fn finalize(&mut self, artwork_path: Option<String>) -> PyResult<PyObject> {
+        use std::path::Path;
+        
+        // Create a new session and swap it with the current one (finalize consumes self)
+        let session = std::mem::replace(
+            &mut self.inner,
+            CHMSession::new().map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?
+        );
+        
+        // Convert artwork_path to Path reference if provided
+        let path_ref = artwork_path.as_ref().map(|s| Path::new(s.as_str()));
+        
+        let proof = session
+            .finalize(path_ref)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+        
+        // Convert proof to Python dict
+        Python::with_gil(|py| {
+            let dict = PyDict::new(py);
+            dict.set_item("version", proof.version.clone())?;
+            dict.set_item("session_id", proof.session_id.to_string())?;
+            dict.set_item("encrypted_events_hash", proof.encrypted_events_hash.clone())?;
+            dict.set_item("file_hash", proof.file_hash.clone())?;
+            dict.set_item("perceptual_hash", proof.perceptual_hash.clone())?;
+            dict.set_item("classification", format!("{:?}", proof.classification))?;
+            dict.set_item("confidence", proof.confidence)?;
+            dict.set_item("timestamp", proof.timestamp.to_rfc3339())?;
+            dict.set_item("signature", proof.signature.clone())?;
+            dict.set_item("artist_public_key", proof.artist_public_key.clone())?;
+            
+            // Add event summary
+            let summary_dict = PyDict::new(py);
+            summary_dict.set_item("total_events", proof.event_summary.total_events)?;
+            summary_dict.set_item("stroke_count", proof.event_summary.stroke_count)?;
+            summary_dict.set_item("layer_count", proof.event_summary.layer_count)?;
+            summary_dict.set_item("session_duration_secs", proof.event_summary.session_duration_secs)?;
+            summary_dict.set_item("imports_count", proof.event_summary.imports_count)?;
+            summary_dict.set_item("undo_redo_count", proof.event_summary.undo_redo_count)?;
+            summary_dict.set_item("plugins_used", proof.event_summary.plugins_used.clone())?;
+            dict.set_item("event_summary", summary_dict)?;
+            
+            // Add optional fields
+            if let Some(ref doc_name) = proof.document_name {
+                dict.set_item("document_name", doc_name)?;
+            }
+            
+            Ok(dict.into())
+        })
+    }
      
      /// Get session metadata as a dict
      /// 

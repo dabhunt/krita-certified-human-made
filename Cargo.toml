@@ -31,7 +31,8 @@ uuid = { version = "1.6", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 
 # Image processing for tracing detection (perceptual hashing)
-image = "0.24"
+# NOTE: Must use image 0.23 to match img_hash dependency
+image = "0.23"
 img_hash = "3.2"
 
 # HTTP client for timestamp services + plugin registry

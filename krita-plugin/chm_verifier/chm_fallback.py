@@ -1,11 +1,8 @@
 """
-CHM Core - Python Implementation
+Pure Python fallback implementation of CHM core functionality.
+Used on macOS where native library loading is blocked by hardened runtime.
 
-Pure Python implementation of CHM core functionality.
-Uses standard Python libraries for cryptography and session management.
-
-This is the primary implementation for MVP. Future versions may add
-Rust optimization for performance-critical operations.
+This provides the same interface as the Rust library but uses Python cryptography libraries.
 """
 
 import hashlib
@@ -15,62 +12,20 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any
 
 
-class CHMProof:
-    """
-    Proof object wrapper for session verification data.
-    Provides export_json() method for compatibility.
-    """
-    
-    def __init__(self, proof_data: Dict[str, Any]):
-        """
-        Create a proof object from session data.
-        
-        Args:
-            proof_data: Dictionary containing proof information
-        """
-        self.data = proof_data
-        print(f"[FLOW-4a] 📝 CHMProof created with {len(proof_data)} keys")
-        print(f"[FLOW-4a] Proof keys: {list(proof_data.keys())}")
-        import sys
-        sys.stdout.flush()
-    
-    def export_json(self) -> str:
-        """
-        Export proof as JSON string.
-        
-        Returns:
-            JSON string representation of the proof
-        """
-        json_str = json.dumps(self.data, indent=2)
-        print(f"[FLOW-4b] 📤 Proof exported as JSON ({len(json_str)} bytes)")
-        import sys
-        sys.stdout.flush()
-        return json_str
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """
-        Get proof data as dictionary.
-        
-        Returns:
-            Proof data dictionary
-        """
-        return self.data
-
-
 class CHMFallback:
     """Pure Python implementation of CHM core functionality"""
     
     def __init__(self):
-        """Initialize the CHM core"""
-        self.version = "0.1.0"
+        """Initialize the fallback implementation"""
+        self.version = "0.1.0-python-fallback"
     
     def get_version(self) -> str:
         """Get library version"""
         return self.version
     
     def hello_from_rust(self) -> str:
-        """Test function (legacy name for compatibility)"""
-        return "Hello from CHM library! Python implementation is working."
+        """Test function (named for compatibility)"""
+        return "Hello from Python fallback! CHM library is working."
 
 
 class CHMSession:
@@ -226,7 +181,7 @@ class CHMSession:
         """Get session ID"""
         return self.session_id
     
-    def finalize(self, artwork_path: Optional[str] = None) -> 'CHMProof':
+    def finalize(self, artwork_path: Optional[str] = None) -> Dict[str, Any]:
         """
         Finalize the session and generate a proof summary.
         
@@ -234,15 +189,10 @@ class CHMSession:
             artwork_path: Optional path to exported artwork for dual-hash computation
         
         Returns:
-            CHMProof object with session verification data
+            Dictionary with session proof data
         """
         if self.finalized:
             raise RuntimeError("Session already finalized")
-        
-        print(f"[FLOW-3a] 🔐 Finalizing session {self.session_id} with {len(self.events)} events")
-        import sys
-        import os
-        sys.stdout.flush()
         
         self.finalized = True
         end_time = datetime.utcnow()
@@ -253,43 +203,24 @@ class CHMSession:
         layer_count = sum(1 for e in self.events if e.get("type") == "layer_created")
         import_count = sum(1 for e in self.events if e.get("type") == "import")
         
-        print(f"[FLOW-3b] 📊 Event summary: {stroke_count} strokes, {layer_count} layers, {import_count} imports")
-        sys.stdout.flush()
-        
         # Generate event hash
         events_json = json.dumps(self.events, sort_keys=True)
         events_hash = hashlib.sha256(events_json.encode()).hexdigest()
         
-        print(f"[FLOW-3c] 🔑 Events hash: {events_hash[:16]}...")
-        sys.stdout.flush()
-        
         # Dual-hash computation if artwork path provided
         artwork_hash = None
-        if artwork_path and os.path.exists(artwork_path):
-            print(f"[FLOW-3c-DUAL] 🖼️ Computing artwork hash for: {artwork_path}")
-            sys.stdout.flush()
-            try:
-                with open(artwork_path, 'rb') as f:
-                    artwork_bytes = f.read()
-                    artwork_hash = hashlib.sha256(artwork_bytes).hexdigest()
-                    print(f"[FLOW-3c-DUAL] ✓ Artwork hash: {artwork_hash[:16]}...")
-                    sys.stdout.flush()
-            except Exception as e:
-                print(f"[FLOW-3c-DUAL] ⚠️ Failed to compute artwork hash: {e}")
-                sys.stdout.flush()
-        else:
-            print(f"[FLOW-3c-DUAL] ℹ️ No artwork path provided, using placeholder hash")
-            sys.stdout.flush()
-        
-        # Classify session
-        classification = self._classify()
-        confidence = 1.0 if classification == "HumanMade" else 0.5  # Simple confidence
-        
-        print(f"[FLOW-3d] 🏷️ Classification: {classification} (confidence: {confidence})")
-        sys.stdout.flush()
+        if artwork_path:
+            import os
+            if os.path.exists(artwork_path):
+                try:
+                    with open(artwork_path, 'rb') as f:
+                        artwork_bytes = f.read()
+                        artwork_hash = hashlib.sha256(artwork_bytes).hexdigest()
+                except Exception as e:
+                    print(f"[CHM-FALLBACK] Warning: Failed to compute artwork hash: {e}")
         
         # Create proof summary
-        proof_data = {
+        proof = {
             "version": "1.0",
             "session_id": self.session_id,
             "document_id": self.document_id,
@@ -300,20 +231,15 @@ class CHMSession:
                 "total_events": len(self.events),
                 "stroke_count": stroke_count,
                 "layer_count": layer_count,
-                "import_count": import_count,
-                "session_duration_secs": int(duration)  # Add for UI display
+                "import_count": import_count
             },
             "events_hash": events_hash,
             "artwork_hash": artwork_hash if artwork_hash else "placeholder_no_artwork_provided",
-            "classification": classification,
-            "confidence": confidence,
+            "classification": self._classify(),
             "metadata": self.metadata
         }
         
-        print(f"[FLOW-3e] ✅ Proof data created, wrapping in CHMProof object")
-        sys.stdout.flush()
-        
-        return CHMProof(proof_data)
+        return proof
     
     def _classify(self) -> str:
         """

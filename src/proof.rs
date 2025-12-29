@@ -52,6 +52,12 @@ pub struct SessionProof {
     /// SHA-256 hash of encrypted events blob
     pub encrypted_events_hash: String,
 
+    /// SHA-256 hash of exact exported file bytes (for exact match verification)
+    pub file_hash: String,
+
+    /// Perceptual hash of visual content (base64, 256-bit, survives re-encoding)
+    pub perceptual_hash: String,
+
     /// ED25519 signature of this proof (signs all fields except this one)
     pub signature: String,
 
@@ -122,6 +128,8 @@ mod tests {
                 undo_redo_count: 50,
             },
             encrypted_events_hash: "abc123".to_string(),
+            file_hash: "sha256:abc123def456".to_string(),
+            perceptual_hash: "AQIDBAUGBwgJ".to_string(),
             signature: "sig123".to_string(),
             triple_timestamp_receipt: None,
             timestamp: Utc::now(),
@@ -133,6 +141,8 @@ mod tests {
 
         assert_eq!(proof.session_id, parsed.session_id);
         assert_eq!(proof.confidence, parsed.confidence);
+        assert_eq!(proof.file_hash, parsed.file_hash);
+        assert_eq!(proof.perceptual_hash, parsed.perceptual_hash);
     }
 
     #[test]
@@ -153,6 +163,8 @@ mod tests {
                 undo_redo_count: 20,
             },
             encrypted_events_hash: "hash".to_string(),
+            file_hash: "sha256:filehash123".to_string(),
+            perceptual_hash: "phash456".to_string(),
             signature: "sig".to_string(),
             triple_timestamp_receipt: None,
             timestamp: Utc::now(),

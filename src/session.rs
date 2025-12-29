@@ -189,7 +189,12 @@ impl CHMSession {
     }
 
     /// Finalize the session and generate a proof
-    pub fn finalize(mut self) -> Result<SessionProof> {
+    /// 
+    /// # Arguments
+    /// * `exported_artwork_path` - Optional path to the exported artwork file.
+    ///   If provided, computes file_hash and perceptual_hash for dual-hash verification.
+    ///   If None, placeholder hashes are used (for backwards compatibility).
+    pub fn finalize(mut self, exported_artwork_path: Option<&std::path::Path>) -> Result<SessionProof> {
         self.check_not_finalized()?;
         self.is_finalized = true;
 
@@ -211,14 +216,34 @@ impl CHMSession {
             .map_err(|e| CHMError::serialization(format!("Failed to serialize encrypted data: {}", e)))?;
         let encrypted_events_hash = crypto::sha256_hash(&encrypted_json);
 
-        // 4. Analyze events for classification
+        // 4. Compute dual hashes if artwork path provided
+        let (file_hash, perceptual_hash) = if let Some(path) = exported_artwork_path {
+            log::info!("Computing dual hashes for artwork: {}", path.display());
+            
+            // Compute file hash (SHA-256 of exact bytes)
+            let file_hash_value = crypto::sha256_file(path)?;
+            let file_hash = format!("sha256:{}", file_hash_value);
+            
+            // Compute perceptual hash (gradient hash for re-encoding resilience)
+            let perceptual_hash = compute_perceptual_hash(path)?;
+            
+            log::debug!("File hash: {}", file_hash);
+            log::debug!("Perceptual hash: {}", perceptual_hash);
+            
+            (file_hash, perceptual_hash)
+        } else {
+            log::warn!("No artwork path provided - using placeholder hashes");
+            ("sha256:pending".to_string(), "phash:pending".to_string())
+        };
+
+        // 5. Analyze events for classification
         let classification = self.analyze_classification();
         let confidence = self.calculate_confidence(&classification);
 
-        // 5. Create event summary (aggregated, not raw events)
+        // 6. Create event summary (aggregated, not raw events)
         let event_summary = self.create_event_summary();
 
-        // 6. Create proof struct (without signature yet)
+        // 7. Create proof struct (without signature yet)
         let proof = SessionProof {
             version: "1.0".to_string(),
             session_id: self.id,
@@ -227,13 +252,15 @@ impl CHMSession {
             confidence,
             event_summary,
             encrypted_events_hash: encrypted_events_hash.clone(),
+            file_hash: file_hash.clone(),
+            perceptual_hash: perceptual_hash.clone(),
             signature: String::new(), // Will be filled after signing
             triple_timestamp_receipt: None,
             timestamp: Utc::now(),
             document_name: self.metadata.document_name.clone(),
         };
 
-        // 7. Sign the proof (sign all fields except signature itself)
+        // 8. Sign the proof (sign all fields except signature itself)
         let proof_json_for_signing = serde_json::to_vec(&(
             &proof.version,
             &proof.session_id,
@@ -242,13 +269,15 @@ impl CHMSession {
             proof.confidence,
             &proof.event_summary,
             &encrypted_events_hash,
+            &file_hash,
+            &perceptual_hash,
             &proof.timestamp,
         ))
         .map_err(|e| CHMError::serialization(format!("Failed to serialize proof for signing: {}", e)))?;
 
         let signature = self.signing_key.sign_base64(&proof_json_for_signing)?;
 
-        // 8. Return proof with signature
+        // 9. Return proof with signature
         let final_proof = SessionProof {
             signature,
             ..proof
@@ -403,6 +432,34 @@ impl Default for CHMSession {
     fn default() -> Self {
         Self::new().expect("Failed to create default session")
     }
+}
+
+/// Compute perceptual hash (pHash) of an image file
+/// Uses gradient hash algorithm (16x16 = 256 bits) for re-encoding resilience
+fn compute_perceptual_hash(path: &std::path::Path) -> Result<String> {
+    use img_hash::{HasherConfig, HashAlg};
+    
+    // Load image
+    let img = image::open(path)
+        .map_err(|e| CHMError::io(format!("Failed to open image for perceptual hashing: {}", e)))?;
+    
+    // Create hasher with gradient algorithm (most robust for compression)
+    let hasher = HasherConfig::new()
+        .hash_alg(HashAlg::Gradient)  // Best for JPEG compression resilience
+        .hash_size(16, 16)             // 256-bit hash (16x16)
+        .to_hasher();
+    
+    // Compute hash and encode as base64
+    let hash = hasher.hash_image(&img);
+    let base64_hash = hash.to_base64();
+    
+    log::debug!(
+        "Computed perceptual hash for {}: {} bytes (base64)",
+        path.display(),
+        base64_hash.len()
+    );
+    
+    Ok(base64_hash)
 }
 
 #[cfg(test)]

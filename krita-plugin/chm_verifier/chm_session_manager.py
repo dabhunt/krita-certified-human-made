@@ -44,12 +44,13 @@ class CHMSessionManager:
         doc_id = id(document)
         return self.active_sessions.get(doc_id)
     
-    def finalize_session(self, document, ai_plugins=None):
+    def finalize_session(self, document, artwork_path=None, ai_plugins=None):
         """
         Finalize and remove session for a document
         
         Args:
             document: Krita document
+            artwork_path: Optional path to exported artwork (for dual-hash computation)
             ai_plugins: Optional list of detected AI plugin dicts
                        (from PluginMonitor.get_enabled_ai_plugins())
         
@@ -74,7 +75,13 @@ class CHMSessionManager:
                 self._log(f"  → {plugin_name} ({plugin_type})")
                 session.record_plugin_used(plugin_name, plugin_type)
         
-        proof = session.finalize()
+        # Finalize with artwork path for dual-hash computation
+        if artwork_path:
+            self._log(f"[FLOW-3b] Computing dual-hash for: {artwork_path}")
+            proof = session.finalize(artwork_path)
+        else:
+            self._log(f"[FLOW-3b] No artwork path provided - using placeholder hashes")
+            proof = session.finalize()
         
         self._log(f"[FLOW-4] ✓ Session finalized, proof generated: {len(proof.export_json())} bytes")
         
