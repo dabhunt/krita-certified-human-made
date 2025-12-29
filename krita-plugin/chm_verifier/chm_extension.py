@@ -23,6 +23,9 @@ except ImportError as e:
 from .chm_session_manager import CHMSessionManager
 from .event_capture import EventCapture
 from .plugin_monitor import PluginMonitor
+from .dependency_checker import check_dependencies, show_dependency_warning
+from .api_client import CHMApiClient
+from .timestamp_service import TripleTimestampService
 
 
 class CHMExtension(Extension):
@@ -43,6 +46,17 @@ class CHMExtension(Extension):
         self._debug_log("=" * 60)
         self._debug_log("CHM: setup() METHOD CALLED - THIS IS THE MAIN ENTRY POINT")
         self._debug_log("=" * 60)
+        
+        # Check dependencies (Task 1.11)
+        dep_status = check_dependencies()
+        if dep_status['missing']:
+            # Show warning but continue (graceful degradation)
+            self._log(f"⚠️  Missing dependencies: {', '.join(dep_status['missing'])}")
+            self._log("    Perceptual hashing disabled, file hash only")
+            # Only show dialog once per session
+            if not hasattr(self, '_dependency_warning_shown'):
+                show_dependency_warning(dep_status['missing'])
+                self._dependency_warning_shown = True
         
         if not CHM_AVAILABLE:
             QMessageBox.warning(
@@ -74,6 +88,12 @@ class CHMExtension(Extension):
             self.session_manager,
             debug_log=self.DEBUG_LOG
         )
+        
+        # Initialize API client (Task 1.12)
+        self.api_client = CHMApiClient(debug_log=self.DEBUG_LOG)
+        
+        # Initialize timestamp service (Task 1.13)
+        self.timestamp_service = TripleTimestampService(debug_log=self.DEBUG_LOG)
         
         # Auto-start event capture
         self.start_capture()
@@ -216,18 +236,124 @@ class CHMExtension(Extension):
                 json.dump(proof_dict, f, indent=2)
             
             self._log(f"[EXPORT] ✓ Proof saved to {proof_filename}")
-            self._log(f"[EXPORT] ✓ Dual-hash computed: file_hash={proof_dict.get('file_hash', 'N/A')[:20]}..., perceptual_hash={proof_dict.get('perceptual_hash', 'N/A')[:20]}...")
             
-            # Show success message
-            QMessageBox.information(
-                None,
-                "CHM Export Successful",
+            # Log dual-hash results
+            fhash = proof_dict.get('file_hash', 'N/A')
+            phash = proof_dict.get('perceptual_hash', 'N/A')
+            fhash_display = fhash[:20] + "..." if fhash and len(fhash) > 20 else fhash
+            phash_display = phash[:20] + "..." if phash and len(phash) > 20 else phash
+            self._log(f"[EXPORT] ✓ Dual-hash computed:")
+            self._log(f"[EXPORT]   • File hash (SHA-256): {fhash_display}")
+            self._log(f"[EXPORT]   • Perceptual hash (aHash): {phash_display}")
+            
+            # Check for duplicate artwork (Task 1.12)
+            duplicate = None
+            if fhash and fhash != 'N/A' and fhash != 'unavailable_missing_dependencies':
+                duplicate = self.api_client.check_duplicate(fhash)
+                if duplicate:
+                    self._log(f"[EXPORT] ⚠️  Duplicate artwork detected!")
+                    self._log(f"[EXPORT]   Existing session: {duplicate.get('session_id')}")
+                    self._log(f"[EXPORT]   Classification: {duplicate.get('classification')}")
+                    
+                    reply = QMessageBox.question(
+                        None,
+                        "Duplicate Artwork Detected",
+                        f"⚠️  This artwork already has a CHM proof!\n\n"
+                        f"Existing proof:\n"
+                        f"• Session ID: {duplicate.get('session_id', 'unknown')}\n"
+                        f"• Classification: {duplicate.get('classification', 'unknown')}\n"
+                        f"• Submitted: {duplicate.get('submitted_at', 'unknown')}\n\n"
+                        f"Would you like to submit a new proof anyway?\n"
+                        f"(This might indicate duplicate submission or artwork modification)",
+                        QMessageBox.Yes | QMessageBox.No
+                    )
+                    
+                    if reply == QMessageBox.No:
+                        self._log("[EXPORT] User cancelled due to duplicate")
+                        return
+            
+            # Submit proof hash to triple timestamp services (Task 1.13)
+            import hashlib
+            proof_hash = hashlib.sha256(json.dumps(proof_dict, sort_keys=True).encode()).hexdigest()
+            timestamp_results = None
+            timestamp_status = "Not timestamped"
+            
+            try:
+                self._log(f"[EXPORT] Submitting proof hash to timestamp services...")
+                self._log(f"[EXPORT] Proof hash: {proof_hash[:32]}...")
+                
+                timestamp_results = self.timestamp_service.submit_proof_hash(proof_hash, proof_dict)
+                
+                success_count = timestamp_results['success_count']
+                self._log(f"[EXPORT] ✓ Timestamps: {success_count}/2 services succeeded")
+                
+                # Add timestamps to proof dict
+                proof_dict['timestamps'] = {
+                    'proof_hash': proof_hash,
+                    'github': timestamp_results.get('github'),
+                    'wayback': timestamp_results.get('wayback'),
+                    'chm_log': timestamp_results.get('chm_log'),
+                    'success_count': success_count
+                }
+                
+                # Re-save proof JSON with timestamps
+                with open(proof_filename, 'w') as f:
+                    json.dump(proof_dict, f, indent=2)
+                
+                self._log(f"[EXPORT] ✓ Proof updated with timestamps")
+                
+                if success_count > 0:
+                    timestamp_status = f"✓ Timestamped ({success_count}/2 services)"
+                    if timestamp_results.get('github'):
+                        self._log(f"[EXPORT]   • GitHub Gist: {timestamp_results['github']['url']}")
+                    if timestamp_results.get('chm_log'):
+                        self._log(f"[EXPORT]   • CHM Log: index {timestamp_results['chm_log']['log_index']}")
+                else:
+                    timestamp_status = "⚠️  All timestamp services failed"
+                    
+            except Exception as e:
+                self._log(f"[EXPORT] ⚠️  Timestamp submission failed (non-fatal): {e}")
+                timestamp_status = f"⚠️  Timestamp failed: {e}"
+                # Non-fatal - proof still valid without timestamps
+            
+            # Submit proof to API/database (Task 1.12)
+            submission_status = "Not submitted"
+            try:
+                self._log("[EXPORT] Submitting proof to CHM database...")
+                submit_result = self.api_client.submit_proof(proof_dict)
+                
+                if submit_result['status'] == 'success':
+                    self._log(f"[EXPORT] ✓ Proof submitted: {submit_result['proof_id']}")
+                    submission_status = f"✓ Submitted ({submit_result.get('message', 'success')})"
+                else:
+                    self._log(f"[EXPORT] ⚠️  Submission warning: {submit_result['message']}")
+                    submission_status = f"⚠️  {submit_result['message']}"
+                    
+            except Exception as e:
+                self._log(f"[EXPORT] ⚠️  Proof submission failed (non-fatal): {e}")
+                submission_status = f"⚠️  Submission failed: {e}"
+                # Non-fatal - proof still saved locally
+            
+            # Show success message with timestamp URLs
+            message = (
                 f"✅ Image exported with CHM proof!\n\n"
                 f"Image: {filename}\n"
                 f"Proof: {proof_filename}\n\n"
                 f"Classification: {proof.to_dict().get('classification', 'Unknown')}\n"
                 f"Strokes: {proof.to_dict().get('event_summary', {}).get('stroke_count', 0)}\n"
-                f"Duration: {proof.to_dict().get('event_summary', {}).get('session_duration_secs', 0)}s"
+                f"Duration: {proof.to_dict().get('event_summary', {}).get('session_duration_secs', 0)}s\n\n"
+                f"Timestamps: {timestamp_status}\n"
+                f"Database: {submission_status}"
+            )
+            
+            # Add clickable GitHub URL if available
+            if timestamp_results and timestamp_results.get('github'):
+                message += f"\n\nGitHub Gist:\n{timestamp_results['github']['url']}"
+            
+            QMessageBox.information(
+                None,
+                "CHM Export Successful",
+                message
             )
             
             self._log("[EXPORT] ========== EXPORT COMPLETE ==========")

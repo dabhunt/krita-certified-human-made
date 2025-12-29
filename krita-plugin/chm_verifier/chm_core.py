@@ -264,21 +264,46 @@ class CHMSession:
         sys.stdout.flush()
         
         # Dual-hash computation if artwork path provided
-        artwork_hash = None
+        file_hash = None
+        perceptual_hash = None
+        
         if artwork_path and os.path.exists(artwork_path):
-            print(f"[FLOW-3c-DUAL] 🖼️ Computing artwork hash for: {artwork_path}")
+            print(f"[FLOW-3c-DUAL] 🖼️ Computing dual-hash for: {artwork_path}")
             sys.stdout.flush()
+            
             try:
+                # 1. File hash (SHA-256 of exact bytes)
                 with open(artwork_path, 'rb') as f:
                     artwork_bytes = f.read()
-                    artwork_hash = hashlib.sha256(artwork_bytes).hexdigest()
-                    print(f"[FLOW-3c-DUAL] ✓ Artwork hash: {artwork_hash[:16]}...")
+                    file_hash = hashlib.sha256(artwork_bytes).hexdigest()
+                    print(f"[FLOW-3c-DUAL] ✓ File hash (SHA-256): {file_hash[:16]}...")
                     sys.stdout.flush()
+                
+                # 2. Perceptual hash (survives re-encoding)
+                try:
+                    from PIL import Image
+                    import imagehash
+                    
+                    img = Image.open(artwork_path)
+                    # Use average hash (robust to compression/resizing)
+                    phash = imagehash.average_hash(img, hash_size=16)  # 256-bit hash
+                    perceptual_hash = str(phash)
+                    print(f"[FLOW-3c-DUAL] ✓ Perceptual hash (aHash): {perceptual_hash[:16]}...")
+                    sys.stdout.flush()
+                except ImportError:
+                    print(f"[FLOW-3c-DUAL] ⚠️ PIL/imagehash not available, skipping perceptual hash")
+                    perceptual_hash = "unavailable_missing_dependencies"
+                    sys.stdout.flush()
+                except Exception as e:
+                    print(f"[FLOW-3c-DUAL] ⚠️ Failed to compute perceptual hash: {e}")
+                    perceptual_hash = f"error_{str(e)[:20]}"
+                    sys.stdout.flush()
+                    
             except Exception as e:
-                print(f"[FLOW-3c-DUAL] ⚠️ Failed to compute artwork hash: {e}")
+                print(f"[FLOW-3c-DUAL] ⚠️ Failed to compute file hash: {e}")
                 sys.stdout.flush()
         else:
-            print(f"[FLOW-3c-DUAL] ℹ️ No artwork path provided, using placeholder hash")
+            print(f"[FLOW-3c-DUAL] ℹ️ No artwork path provided, using placeholder hashes")
             sys.stdout.flush()
         
         # Classify session
@@ -304,7 +329,8 @@ class CHMSession:
                 "session_duration_secs": int(duration)  # Add for UI display
             },
             "events_hash": events_hash,
-            "artwork_hash": artwork_hash if artwork_hash else "placeholder_no_artwork_provided",
+            "file_hash": file_hash if file_hash else "placeholder_no_artwork_provided",
+            "perceptual_hash": perceptual_hash if perceptual_hash else "placeholder_no_artwork_provided",
             "classification": classification,
             "confidence": confidence,
             "metadata": self.metadata

@@ -5,6 +5,12 @@ This plugin captures art creation events to generate cryptographic proofs of hum
 """
 
 import sys
+import os
+
+# Add vendor directory to Python path for PIL and imagehash dependencies
+vendor_dir = os.path.join(os.path.dirname(__file__), 'vendor')
+if os.path.exists(vendor_dir) and vendor_dir not in sys.path:
+    sys.path.insert(0, vendor_dir)
 
 # Log to both stdout AND a debug file for troubleshooting
 def debug_log(message):
