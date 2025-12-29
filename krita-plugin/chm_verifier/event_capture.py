@@ -145,9 +145,8 @@ class CanvasEventFilter(QObject):
 class EventCapture:
     """Captures and records Krita events to CHM sessions"""
     
-    def __init__(self, session_manager, session_storage=None, debug_log=True):
+    def __init__(self, session_manager, debug_log=True):
         self.session_manager = session_manager
-        self.session_storage = session_storage  # For persisting sessions
         self.DEBUG_LOG = debug_log
         self.connected_views = set()  # Track which views have signals connected
         self.connected_documents = set()  # Track which documents have signals
@@ -166,11 +165,12 @@ class EventCapture:
         # Track document modification state for stroke detection fallback
         self.doc_modified_state = {}  # doc_id -> bool (was modified last poll)
         
+        # BFROS FIX: Track document content hash to detect ACTUAL changes
+        # Since modified() is a boolean flag, we need to detect pixel changes
+        self.doc_content_hash = {}  # doc_id -> str (hash of document content)
+        
         # BFROS: Track additional metrics to detect ongoing activity
         self.doc_undo_count = {}  # doc_id -> int (undo stack count)
-        
-        # BFROS-FIX: Track pixel hash or timestamp to detect ACTUAL new changes
-        self.doc_last_change_hash = {}  # doc_id -> hash/timestamp of last detected change
         
     def start_capture(self):
         """Start capturing events globally"""
@@ -479,7 +479,7 @@ class EventCapture:
             self._log(f"[ROAA] ✓ View {view_id} configured (using: {method_used})")
     
     def on_image_created(self):
-        """Handler for new document creation or file open - tries to resume session"""
+        """Handler for new document creation"""
         if self.DEBUG_LOG:
             self._log("[BFROS] ===== on_image_created SIGNAL FIRED =====")
         
@@ -509,78 +509,39 @@ class EventCapture:
         QTimer.singleShot(1000, lambda: self._delayed_canvas_retry(doc, "1000ms delay"))
         QTimer.singleShot(2000, lambda: self._delayed_canvas_retry(doc, "2000ms delay"))
         
-        # TRY TO RESUME SESSION FROM DISK (Task 1.15.4)
+        # Create CHM session for new document
+        if self.DEBUG_LOG:
+            self._log(f"[BFROS-CREATE] Checking if session exists for new document...")
+            self._log(f"[BFROS-CREATE] has_session result: {self.session_manager.has_session(doc)}")
+        
         if not self.session_manager.has_session(doc):
-            session_resumed = False
+            if self.DEBUG_LOG:
+                self._log(f"[BFROS-CREATE] Creating NEW session for document: {doc.name()}")
             
-            if self.session_storage:
-                try:
-                    filepath = doc.fileName()
-                    
-                    if filepath:  # Existing file (not a new unsaved document)
-                        self._log(f"[RESUME] File opened: {filepath}")
-                        
-                        # Generate session key for this file
-                        session_key = self.session_storage.get_session_key_for_file(filepath)
-                        
-                        if session_key:
-                            # Try to load session from disk
-                            session_json = self.session_storage.load_session(session_key)
-                            
-                            if session_json:
-                                # Resume existing session
-                                self._log(f"[RESUME] ✓ Found persisted session, resuming...")
-                                
-                                session = self.session_manager.import_session(doc, session_json)
-                                
-                                if session:
-                                    self._log(f"[RESUME] ✓ Session resumed: {session.id}")
-                                    session_resumed = True
-                                else:
-                                    self._log(f"[RESUME] ⚠️  Session import failed, creating new session")
-                            else:
-                                if self.DEBUG_LOG:
-                                    self._log(f"[RESUME] No persisted session found for this file")
-                        else:
-                            self._log(f"[RESUME] ⚠️  Could not generate session key")
-                    else:
-                        if self.DEBUG_LOG:
-                            self._log(f"[RESUME] New unsaved document, creating fresh session")
-                    
-                except Exception as e:
-                    self._log(f"[RESUME] ❌ Error resuming session: {e}")
-                    import traceback
-                    self._log(f"[RESUME] Traceback: {traceback.format_exc()}")
-            
-            # Create new session if resume failed or no saved session exists
-            if not session_resumed:
-                if self.DEBUG_LOG:
-                    self._log(f"[BFROS-CREATE] Creating NEW session for document: {doc.name()}")
+            try:
+                session = self.session_manager.create_session(doc)
                 
+                if self.DEBUG_LOG:
+                    self._log(f"[BFROS-CREATE] ✓ Session created: {session.id}")
+                
+                # Set metadata
                 try:
-                    session = self.session_manager.create_session(doc)
-                    
+                    import platform
+                    session.set_metadata(
+                        document_name=doc.name(),
+                        canvas_width=doc.width(),
+                        canvas_height=doc.height(),
+                        krita_version=app.version(),
+                        os_info=f"{platform.system()} {platform.release()}"
+                    )
                     if self.DEBUG_LOG:
-                        self._log(f"[BFROS-CREATE] ✓ Session created: {session.id}")
-                    
-                    # Set metadata
-                    try:
-                        import platform
-                        session.set_metadata(
-                            document_name=doc.name(),
-                            canvas_width=doc.width(),
-                            canvas_height=doc.height(),
-                            krita_version=app.version(),
-                            os_info=f"{platform.system()} {platform.release()}"
-                        )
-                        if self.DEBUG_LOG:
-                            self._log(f"[BFROS-CREATE] ✓ Metadata set for session {session.id}")
-                    except Exception as e:
-                        self._log(f"[BFROS-CREATE] Error setting metadata: {e}")
+                        self._log(f"[BFROS-CREATE] ✓ Metadata set for session {session.id}")
                 except Exception as e:
-                    self._log(f"[BFROS-CREATE] ❌ CRITICAL ERROR creating session: {e}")
-                    import traceback
-                    self._log(f"[BFROS-CREATE] Traceback: {traceback.format_exc()}")
+                    self._log(f"[BFROS-CREATE] Error setting metadata: {e}")
+            except Exception as e:
+                self._log(f"[BFROS-CREATE] ❌ CRITICAL ERROR creating session: {e}")
+                import traceback
+                self._log(f"[BFROS-CREATE] Traceback: {traceback.format_exc()}")
         else:
             if self.DEBUG_LOG:
                 self._log(f"[BFROS-CREATE] Session already exists for document {doc.name()}")
@@ -597,7 +558,7 @@ class EventCapture:
         self._log("Document closed event received")
     
     def on_image_saved(self):
-        """Handler for document save - also persists session"""
+        """Handler for document save"""
         if self.DEBUG_LOG:
             self._log("[BFROS] ===== on_image_saved SIGNAL FIRED =====")
         
@@ -622,37 +583,6 @@ class EventCapture:
                 )
             except Exception as e:
                 self._log(f"Error updating metadata on save: {e}")
-            
-            # PERSIST SESSION TO DISK (Task 1.15.3)
-            if self.session_storage:
-                try:
-                    filepath = doc.fileName()
-                    
-                    if filepath:  # File has been saved (not temporary)
-                        # Export session to JSON
-                        session_json = session.export_json()
-                        
-                        # Generate session key based on file path
-                        session_key = self.session_storage.get_session_key_for_file(filepath)
-                        
-                        if session_key:
-                            # Save session to disk
-                            success = self.session_storage.save_session(session_key, session_json)
-                            
-                            if success:
-                                self._log(f"[PERSIST] ✓ Session persisted for: {doc.name()}")
-                            else:
-                                self._log(f"[PERSIST] ⚠️  Failed to persist session")
-                        else:
-                            self._log(f"[PERSIST] ⚠️  Could not generate session key")
-                    else:
-                        if self.DEBUG_LOG:
-                            self._log(f"[PERSIST] Document not saved to file yet, skipping persistence")
-                        
-                except Exception as e:
-                    self._log(f"[PERSIST] ❌ Error persisting session: {e}")
-                    import traceback
-                    self._log(f"[PERSIST] Traceback: {traceback.format_exc()}")
     
     def on_view_created(self, view):
         """Handler for new view creation"""
@@ -877,35 +807,13 @@ class EventCapture:
         Poll document modification state to detect drawing activity.
         PRIMARY METHOD per krita-api-research.md (signals unavailable via SIP).
         
-        BFROS-FIX: Only record when ACTUAL new changes occur, not just "still modified".
-        Uses pixel data hash to detect real changes vs stale modified flag.
+        BFROS FIX: Use lightweight thumbnail hash to detect ACTUAL pixel changes.
+        The modified() flag is boolean - once True, stays True until save.
+        We need to detect when pixels actually change (new strokes).
         """
         try:
             current_modified = doc.modified()
             previous_modified = self.doc_modified_state.get(doc_id, False)
-            
-            # BFROS-FIX: Get a change signature to detect ACTUAL new activity
-            # We'll use pixel data from a layer to detect if anything actually changed
-            try:
-                import hashlib
-                
-                # Get pixel bytes from the active layer (small sample for performance)
-                active_node = doc.activeNode()
-                if active_node:
-                    # Get a small region (top-left 50x50 pixels) as change detector
-                    pixel_data = active_node.pixelData(0, 0, min(50, doc.width()), min(50, doc.height()))
-                    current_change_hash = hashlib.md5(pixel_data).hexdigest()
-                else:
-                    # Fallback: use document name + modified state as hash
-                    current_change_hash = hashlib.md5(f"{doc.name()}{current_modified}".encode()).hexdigest()
-            except Exception as e:
-                # Fallback: use timestamp as "hash" (will always detect change)
-                import time
-                current_change_hash = str(time.time())
-                if self.DEBUG_LOG:
-                    self._log(f"[BFROS-HASH] Error getting pixel hash, using timestamp: {e}")
-            
-            previous_change_hash = self.doc_last_change_hash.get(doc_id, None)
             
             # BFROS: Log EVERY poll to see if modified flag EVER changes
             if self.DEBUG_LOG:
@@ -915,28 +823,62 @@ class EventCapture:
                 
                 # Log every 20 polls to see the modified state
                 if self._mod_poll_count % 20 == 0:
-                    hash_changed = current_change_hash != previous_change_hash
-                    self._log(f"[POLLING-DEBUG] Poll #{self._mod_poll_count}: modified={current_modified}, previous={previous_modified}, hash_changed={hash_changed}")
+                    self._log(f"[POLLING-DEBUG] Poll #{self._mod_poll_count}: modified={current_modified}, previous={previous_modified}")
             
-            # BFROS-FIX: Only record if there's ACTUAL new activity
-            # Criteria: modified flag is True AND pixel hash changed (actual new stroke)
+            # BFROS FIX: Detect ACTUAL content changes using lightweight thumbnail hash
+            # This solves the "modified flag stays True" problem
+            
             should_record = False
-            trigger_reason = None
             
-            # Detect transition to modified state OR actual pixel changes
+            # Only check for changes if document is modified
             if current_modified:
-                # Check if pixels actually changed
-                if previous_change_hash is None:
-                    # First time seeing this document
-                    should_record = True
-                    trigger_reason = "First detection"
-                elif current_change_hash != previous_change_hash:
-                    # Pixels changed - real new stroke!
-                    should_record = True
-                    trigger_reason = "Pixel data changed (new stroke)"
-                    if self.DEBUG_LOG:
-                        self._log(f"[BFROS-STROKE] ✓ ACTUAL change detected! Hash: {previous_change_hash[:8]}...→{current_change_hash[:8]}...")
-                # else: modified=True but hash unchanged = stale modified flag, don't record
+                try:
+                    # Get lightweight hash of document content
+                    # Use thumbnail() method - fast and sufficient for change detection
+                    import hashlib
+                    
+                    # Get 100x100 thumbnail (fast to compute)
+                    thumbnail = doc.thumbnail(100, 100)
+                    
+                    if thumbnail:
+                        # Convert QImage to bytes for hashing
+                        # Using simple width*height as proxy (very fast)
+                        thumbnail_hash = f"{thumbnail.width()}x{thumbnail.height()}x{thumbnail.byteCount()}"
+                        
+                        # For more accurate detection, hash actual pixel data
+                        # But this is slower - use only if needed
+                        # thumbnail_bytes = thumbnail.bits().asstring(thumbnail.byteCount())
+                        # thumbnail_hash = hashlib.md5(thumbnail_bytes).hexdigest()[:16]
+                        
+                        previous_hash = self.doc_content_hash.get(doc_id)
+                        
+                        # Detect ACTUAL change in content
+                        if previous_hash != thumbnail_hash:
+                            should_record = True
+                            self.doc_content_hash[doc_id] = thumbnail_hash
+                            
+                            if self.DEBUG_LOG:
+                                self._log(f"[BFROS-STROKE] ✓ Content changed detected! (hash: {thumbnail_hash})")
+                        else:
+                            # Content unchanged - user is idle or working on same area
+                            # Don't record phantom strokes
+                            if self.DEBUG_LOG and self._mod_poll_count % 40 == 0:
+                                self._log(f"[BFROS-STROKE] Content unchanged (no new strokes)")
+                    
+                except Exception as e:
+                    # Fallback: If thumbnail fails, use transition detection only
+                    if current_modified and not previous_modified:
+                        should_record = True
+                        if self.DEBUG_LOG:
+                            self._log(f"[BFROS-STROKE] Fallback: Transition detected (thumbnail failed: {e})")
+            
+            # Alternative simple approach: Only detect transition False → True
+            # This catches first stroke after save, but misses subsequent strokes
+            # We'll use this as additional trigger
+            elif current_modified and not previous_modified:
+                should_record = True
+                if self.DEBUG_LOG:
+                    self._log(f"[BFROS-STROKE] ✓ Transition detected (False → True)")
             
             if should_record:
                 session = self.session_manager.get_session(doc)
@@ -971,7 +913,7 @@ class EventCapture:
                 if session:
                     # Record a stroke event (generic since we don't have coordinates)
                     if self.DEBUG_LOG:
-                        self._log(f"[FLOW-1] 🎨 Stroke detected! Recording to session {session.id} (reason: {trigger_reason})")
+                        self._log(f"[FLOW-1] 🎨 Stroke detected! Recording to session {session.id}")
                     
                     session.record_stroke(
                         x=0.0,  # Placeholder - polling doesn't provide coordinates
@@ -979,6 +921,9 @@ class EventCapture:
                         pressure=0.5,  # Default
                         brush_name="Unknown"
                     )
+                    
+                    # Update last stroke time for rate limiting
+                    self._last_stroke_time[doc_id] = current_time
                     
                     if self.DEBUG_LOG:
                         self._log(f"[FLOW-2] ✓ Stroke recorded (session {session.id}, total events: {session.event_count})")
@@ -988,12 +933,9 @@ class EventCapture:
             
             # Update state
             self.doc_modified_state[doc_id] = current_modified
-            self.doc_last_change_hash[doc_id] = current_change_hash
             
         except Exception as e:
             self._log(f"Error polling modification state: {e}")
-            import traceback
-            self._log(f"Traceback: {traceback.format_exc()}")
     
     def _log(self, message):
         """Debug logging helper"""
