@@ -1,5 +1,5 @@
 """
-Certified Human-Made (CHM) Verifier - Krita Plugin
+Certified Human-Made (CHM) - Krita Plugin
 
 This plugin captures art creation events to generate cryptographic proofs of human authorship.
 """

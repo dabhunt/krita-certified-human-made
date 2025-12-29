@@ -1,0 +1,68 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "🦀 Debug Rust Tests",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--lib"
+        ]
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "🔨 Build Rust Library (Release)"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "🦀 Debug Specific Test",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--lib",
+          "${input:testName}"
+        ]
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "python",
+      "request": "launch",
+      "name": "🐍 Test Plugin Load (Python)",
+      "program": "${workspaceFolder}/debug/test-plugin-load.py",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "type": "python",
+      "request": "attach",
+      "name": "🐍 Attach to Krita (Python Debugger)",
+      "connect": {
+        "host": "localhost",
+        "port": 5678
+      },
+      "pathMappings": [
+        {
+          "localRoot": "${workspaceFolder}/krita-plugin/chm_verifier",
+          "remoteRoot": "~/Library/Application Support/krita/pykrita/chm_verifier"
+        }
+      ],
+      "justMyCode": false
+    }
+  ],
+  "inputs": [
+    {
+      "id": "testName",
+      "type": "promptString",
+      "description": "Test name to run (e.g., test_session_creation)",
+      "default": ""
+    }
+  ]
+}
+

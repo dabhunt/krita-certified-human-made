@@ -1,0 +1,80 @@
+{
+  // Rust settings
+  "rust-analyzer.cargo.features": "all",
+  "rust-analyzer.checkOnSave.command": "clippy",
+  "rust-analyzer.cargo.buildScripts.enable": true,
+  
+  // Python settings
+  "python.defaultInterpreterPath": "/usr/bin/python3",
+  "python.analysis.typeCheckingMode": "basic",
+  "python.linting.enabled": true,
+  "python.linting.pylintEnabled": false,
+  "python.linting.flake8Enabled": true,
+  "python.formatting.provider": "black",
+  
+  // File associations
+  "files.associations": {
+    "*.desktop": "properties",
+    "Cargo.lock": "toml"
+  },
+  
+  // Exclude patterns for file search
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/target": false,  // Show target in explorer but exclude from search
+    "**/*.pyc": true,
+    "**/.DS_Store": true
+  },
+  
+  "search.exclude": {
+    "**/target": true,
+    "**/__pycache__": true,
+    "**/node_modules": true
+  },
+  
+  // File watching
+  "files.watcherExclude": {
+    "**/target/**": true,
+    "**/__pycache__/**": true
+  },
+  
+  // Terminal settings
+  "terminal.integrated.env.osx": {
+    "DEBUG_LOG": "true"
+  },
+  
+  // Editor settings for different file types
+  "[rust]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "rust-lang.rust-analyzer"
+  },
+  
+  "[python]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "ms-python.black-formatter",
+    "editor.tabSize": 4
+  },
+  
+  "[markdown]": {
+    "editor.formatOnSave": false,
+    "editor.wordWrap": "on"
+  },
+  
+  "[json]": {
+    "editor.formatOnSave": true,
+    "editor.tabSize": 2
+  },
+  
+  // CHM-specific: Auto-show output when running tasks
+  "terminal.integrated.automationProfile.osx": {
+    "path": "/bin/bash"
+  },
+  
+  // Git settings
+  "git.ignoreLimitWarning": true,
+  
+  // Helpful for viewing debug logs
+  "files.autoSave": "afterDelay",
+  "files.autoSaveDelay": 1000
+}
+

@@ -5,7 +5,7 @@ Manages active CHM sessions per document.
 Handles session lifecycle (create, update, finalize).
 """
 
-import chm
+from .chm_loader import chm
 
 
 class CHMSessionManager:

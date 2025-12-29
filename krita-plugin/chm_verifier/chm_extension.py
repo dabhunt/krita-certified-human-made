@@ -9,42 +9,43 @@ from PyQt5.QtWidgets import QMessageBox
 import sys
 import os
 
-# Add the lib directory to Python path to import the compiled Rust library
-# This will be populated with chm.so (Linux), chm.pyd (Windows), or chm.dylib (macOS)
-lib_dir = os.path.join(os.path.dirname(__file__), "lib")
-if os.path.exists(lib_dir):
-    sys.path.insert(0, lib_dir)
-
+# Import CHM library (Python implementation)
 try:
-    import chm
+    from .chm_loader import chm, CHM_IMPLEMENTATION
     CHM_AVAILABLE = True
+    print(f"CHM: Loaded CHM library ({CHM_IMPLEMENTATION} implementation)")
 except ImportError as e:
     CHM_AVAILABLE = False
-    print(f"CHM library not available: {e}")
+    chm = None
+    CHM_IMPLEMENTATION = None
+    print(f"CHM: Failed to load library: {e}")
 
 from .chm_session_manager import CHMSessionManager
 from .event_capture import EventCapture
 
 
 class CHMExtension(Extension):
-    """Main extension class for CHM Verifier plugin"""
+    """Main extension class for CHM plugin"""
     
     def __init__(self, parent):
+        self._debug_log("CHMExtension.__init__() called")
         super().__init__(parent)
         self.DEBUG_LOG = True  # Enable debug logging for MVP
         self.session_manager = None
         self.event_capture = None
         self.capture_active = False
+        self._debug_log("CHMExtension.__init__() completed")
         
     def setup(self):
         """Called when Krita initializes the plugin"""
-        if self.DEBUG_LOG:
-            print("CHM Verifier: Setup called")
+        self._debug_log("=" * 60)
+        self._debug_log("CHM: setup() METHOD CALLED - THIS IS THE MAIN ENTRY POINT")
+        self._debug_log("=" * 60)
         
         if not CHM_AVAILABLE:
             QMessageBox.warning(
                 None,
-                "CHM Verifier",
+                "CHM",
                 "CHM Rust library not found. Please install the compiled library."
             )
             return
@@ -52,12 +53,12 @@ class CHMExtension(Extension):
         # Verify library version
         version = chm.get_version()
         if self.DEBUG_LOG:
-            print(f"CHM Verifier: Loaded CHM library version {version}")
+            print(f"CHM: Loaded CHM library version {version}")
         
         # Test basic functionality
         test_msg = chm.hello_from_rust()
         if self.DEBUG_LOG:
-            print(f"CHM Verifier: {test_msg}")
+            print(f"CHM: {test_msg}")
         
         # Initialize session manager and event capture
         self.session_manager = CHMSessionManager(debug_log=self.DEBUG_LOG)
@@ -69,12 +70,12 @@ class CHMExtension(Extension):
         # Auto-start event capture
         self.start_capture()
         
-        self._log("CHM Verifier initialized successfully")
+        self._log("CHM initialized successfully")
     
     def createActions(self, window):
         """Create menu actions for the plugin"""
         if self.DEBUG_LOG:
-            print("CHM Verifier: Creating actions")
+            print("CHM: Creating actions")
         
         # TODO: Add menu actions in Task 1.8
         # - Start/Stop Recording
@@ -119,5 +120,27 @@ class CHMExtension(Extension):
     def _log(self, message):
         """Debug logging helper"""
         if self.DEBUG_LOG:
-            print(f"CHM Verifier: {message}")
+            self._debug_log(message)
+    
+    def _debug_log(self, message):
+        """Write to both console and debug file"""
+        import sys
+        full_message = f"CHM: {message}"
+        print(full_message)
+        sys.stdout.flush()
+        
+        # Also write to debug file
+        try:
+            import os
+            from datetime import datetime
+            log_dir = os.path.expanduser("~/.local/share/chm")
+            os.makedirs(log_dir, exist_ok=True)
+            log_file = os.path.join(log_dir, "plugin_debug.log")
+            
+            with open(log_file, "a") as f:
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                f.write(f"[{timestamp}] {full_message}\n")
+                f.flush()
+        except Exception as e:
+            print(f"CHM: Could not write to log file: {e}")
 

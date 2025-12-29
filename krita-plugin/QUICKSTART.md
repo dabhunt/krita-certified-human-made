@@ -38,7 +38,7 @@ cp krita-plugin/chm_verifier.desktop "$HOME/Library/Application Support/krita/py
 
 1. Open **Krita**
 2. **Settings** → **Configure Krita** → **Python Plugin Manager**
-3. Check **"Certified Human-Made Verifier"**
+3. Check **"Certified Human-Made"**
 4. Click **OK**
 5. **Restart Krita**
 
@@ -47,9 +47,9 @@ cp krita-plugin/chm_verifier.desktop "$HOME/Library/Application Support/krita/py
 1. Open **Tools** → **Scripts** → **Scripter**
 2. Look for these messages in console:
    ```
-   CHM Verifier: Setup called
-   CHM Verifier: Loaded CHM library version 0.1.0
-   CHM Verifier: Event capture started
+   CHM: Setup called
+   CHM: Loaded CHM library version 0.1.0
+   CHM: Event capture started
    ```
 
 ## Troubleshooting

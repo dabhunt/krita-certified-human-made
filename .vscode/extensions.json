@@ -1,0 +1,28 @@
+{
+  "recommendations": [
+    // Rust development
+    "rust-lang.rust-analyzer",
+    "vadimcn.vscode-lldb",
+    "swellaby.vscode-rust-test-adapter",
+    
+    // Python development
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "ms-python.black-formatter",
+    
+    // General utilities
+    "tamasfe.even-better-toml",
+    "eamodio.gitlens",
+    "usernamehw.errorlens",
+    "gruntfuggly.todo-tree",
+    
+    // Markdown
+    "yzhang.markdown-all-in-one",
+    "davidanson.vscode-markdownlint",
+    
+    // Shell scripts
+    "timonwong.shellcheck",
+    "foxundermoon.shell-format"
+  ]
+}
+

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Certified Human-Made Verifier - Manual</title>
+    <title>Certified Human-Made - Manual</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -95,16 +95,22 @@
     </style>
 </head>
 <body>
-    <h1>Certified Human-Made (CHM) Verifier</h1>
+    <h1>Certified Human-Made (CHM)</h1>
     
     <div class="feature-box">
         <strong>Version:</strong> 0.1.0-alpha<br>
         <strong>Purpose:</strong> Cryptographically prove your artwork is human-made
     </div>
 
+    <h2>Introduction</h2>
+    <p>
+        In a world where AI can generate photorealistic art in seconds, <strong>human creativity needs authentication</strong>.
+        This plugin gives artists a tool to provide undeniable proof your work is human-made.
+    </p>
+
     <h2>What Is This?</h2>
     <p>
-        The Certified Human-Made Verifier is a Krita plugin that captures your creative process as you work,
+        The Certified Human-Made is a Krita plugin that captures your creative process as you work,
         generating cryptographic proof that your artwork was made by a human, not AI.
     </p>
 
@@ -125,31 +131,36 @@
             <th>Example</th>
         </tr>
         <tr>
-            <td><strong>Pure Human-Made</strong></td>
-            <td>No AI assistance, no tracing</td>
-            <td>Drawing from imagination or life</td>
-        </tr>
-        <tr>
-            <td><strong>Referenced</strong></td>
-            <td>Uses reference images but hand-drawn</td>
-            <td>Photo reference for anatomy study</td>
-        </tr>
-        <tr>
-            <td><strong>AI-Assisted</strong></td>
-            <td>AI plugins used for generation/editing</td>
-            <td>Stable Diffusion for backgrounds</td>
-        </tr>
-        <tr>
-            <td><strong>Traced</strong></td>
-            <td>Direct tracing over imported images</td>
-            <td>&gt;70% pixel overlap detected</td>
+            <td><strong>Certified Human-Made</strong></td>
+            <td>Purely human work. References are allowed and don't disqualify this label—only if traced over or visible in final export.</td>
+            <td>Drawing from imagination, life, or using hidden reference images for anatomy/pose study</td>
         </tr>
         <tr>
             <td><strong>Mixed Media</strong></td>
-            <td>Imported images remain visible</td>
-            <td>Photo collage with painting</td>
+            <td>Imported images remain visible in final export</td>
+            <td>Photo collage with digital painting overlay</td>
+        </tr>
+        <tr>
+            <td><strong>Traced</strong></td>
+            <td>Direct tracing over imported images (&gt;33% edge correlation)</td>
+            <td>Line art traced over a photo reference</td>
+        </tr>
+        <tr>
+            <td><strong>AI-Assisted</strong></td>
+            <td>AI plugins detected during creation (lowest verification level)</td>
+            <td>Stable Diffusion or AI generation tools used</td>
         </tr>
     </table>
+    
+    <div class="feature-box">
+        <h3>Important Note: References Are OK!</h3>
+        <p>
+            Using reference images is a normal and professional part of the artistic process. 
+            The <strong>Human-Made</strong> classification allows references as long as you're not 
+            directly tracing them or leaving them visible in the final artwork. The system tracks 
+            reference usage transparently in the detailed metadata while maintaining the Human-Made label.
+        </p>
+    </div>
 
     <h2>Using the Plugin</h2>
     
@@ -162,9 +173,9 @@
         You should see messages like:
     </p>
     <ul>
-        <li><code>CHM Verifier: Setup called</code></li>
-        <li><code>CHM Verifier: Loaded CHM library version 0.1.0</code></li>
-        <li><code>CHM Verifier: Event capture started</code></li>
+        <li><code>CHM: Setup called</code></li>
+        <li><code>CHM: Loaded CHM library version 0.1.0</code></li>
+        <li><code>CHM: Event capture started</code></li>
     </ul>
 
     <h3>Generating a Certificate</h3>
@@ -244,19 +255,10 @@
         <li><strong>Community:</strong> Contributions welcome!</li>
     </ul>
 
-    <h2>Why This Matters</h2>
-    <p>
-        In a world where AI can generate photorealistic art in seconds, <strong>human creativity needs authentication</strong>.
-        This plugin isn't about opposing AI - it's about giving artists a tool to prove their craft when it matters.
-    </p>
-    <p>
-        Artists spend years developing skills. This plugin helps them prove it.
-    </p>
-
     <hr style="margin: 40px 0;">
     
     <p style="text-align: center; color: #aaaaaa;">
-        <strong style="color: #ffffff;">Certified Human-Made Verifier</strong><br>
+        <strong style="color: #ffffff;">Certified Human-Made</strong><br>
         <span style="color: #aaaaaa;">Version 0.1.0-alpha | GPL-3.0 License</span><br>
         <em style="color: #888888;">Making human creativity verifiable</em>
     </p>

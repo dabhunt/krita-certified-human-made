@@ -1,8 +1,13 @@
-# Rust
+# Rust (kept for future optimization, not used in MVP)
 /target/
 **/*.rs.bk
 *.pdb
 Cargo.lock
+
+# Built native libraries (not used in Python-only MVP)
+krita-plugin/chm_verifier/lib/*.so
+krita-plugin/chm_verifier/lib/*.dylib
+krita-plugin/chm_verifier/lib/*.pyd
 
 # Python
 __pycache__/
@@ -24,7 +29,13 @@ ENV/
 .venv
 
 # IDE
-.vscode/
+# VS Code - track workspace settings, ignore user settings
+!.vscode/
+.vscode/*
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/settings.json
 .idea/
 *.swp
 *.swo

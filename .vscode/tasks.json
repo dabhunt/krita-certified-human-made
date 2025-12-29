@@ -1,0 +1,219 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "🔨 Build Rust Library (macOS)",
+      "type": "shell",
+      "command": "./build-for-krita.sh",
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "🔨 Build Rust Library (Release)",
+      "type": "shell",
+      "command": "cargo build --release",
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "📦 Install Plugin (Full)",
+      "type": "shell",
+      "command": "./install-plugin.sh",
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "🔄 Quick Update Plugin (macOS Dev)",
+      "type": "shell",
+      "command": "./dev-update-plugin.sh",
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": true
+      },
+      "problemMatcher": [],
+      "dependsOn": []
+    },
+    {
+      "label": "⚡ Build + Update Plugin (macOS)",
+      "type": "shell",
+      "command": "./build-for-krita.sh && ./dev-update-plugin.sh",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "📊 View Debug Log",
+      "type": "shell",
+      "command": "cat ~/.local/share/chm/plugin_debug.log",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "📊 Tail Debug Log (Live)",
+      "type": "shell",
+      "command": "tail -f ~/.local/share/chm/plugin_debug.log",
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "🗑️ Clear Debug Log",
+      "type": "shell",
+      "command": "rm -f ~/.local/share/chm/plugin_debug.log && echo '✅ Debug log cleared. Restart Krita to generate new log.'",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "✅ Verify Plugin Installation",
+      "type": "shell",
+      "command": "./debug/verify-plugin-installation.sh",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "🔍 Test Plugin Load (Python)",
+      "type": "shell",
+      "command": "./debug/test-plugin-load.py",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "🔧 Fix macOS Code Signature",
+      "type": "shell",
+      "command": "./debug/fix-macos-signature.sh",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "🧪 Run Rust Tests",
+      "type": "shell",
+      "command": "cargo test",
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "🧪 Run Rust Tests (All)",
+      "type": "shell",
+      "command": "cargo test -- --include-ignored",
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "📝 Check Rust Code (Clippy)",
+      "type": "shell",
+      "command": "cargo clippy",
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "🎨 Format Rust Code",
+      "type": "shell",
+      "command": "cargo fmt",
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "🔍 Check Plugin Directory (macOS)",
+      "type": "shell",
+      "command": "ls -la ~/Library/Application\\ Support/krita/pykrita/ | grep chm",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "🔍 Check Library Signature (macOS)",
+      "type": "shell",
+      "command": "codesign -dv ~/Library/Application\\ Support/krita/pykrita/chm_verifier/lib/chm.so 2>&1 || echo 'Library not found or not signed'",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "📖 Open Manual in Browser",
+      "type": "shell",
+      "command": "open krita-plugin/chm_verifier/Manual.html",
+      "presentation": {
+        "reveal": "never"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "🚀 Full Rebuild + Install + Clear Log",
+      "type": "shell",
+      "command": "./build-for-krita.sh && ./dev-update-plugin.sh && rm -f ~/.local/share/chm/plugin_debug.log && echo '✅ Complete! Restart Krita now.'",
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": true
+      },
+      "problemMatcher": []
+    }
+  ]
+}
+

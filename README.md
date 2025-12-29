@@ -12,7 +12,11 @@ A privacy-first verification system for Krita that captures your creative proces
 
 ## 🎯 What is CHM?
 
-In the age of AI art generators, **how do you prove you actually drew something?**
+### Why This Matters
+
+In a world where AI can generate photorealistic art in seconds, **human creativity needs authentication**. Artists spend years developing their skills, and this plugin helps them prove it.
+
+**How do you prove you actually drew something?**
 
 CHM is a Krita plugin that:
 - ✅ **Captures** your drawing process (strokes, layers, timing)
@@ -25,10 +29,11 @@ CHM is a Krita plugin that:
 **Proof Certificate** (shareable):
 ```json
 {
-  "classification": "PureHumanMade",
+  "classification": "HumanMade",
   "confidence": 0.95,
   "stroke_count": 1247,
   "session_duration": "3h 42m",
+  "references_used": true,
   "timestamps": {
     "github": "2025-12-28T10:30:45Z",
     "archive": "2025-12-28T10:30:47Z",
@@ -109,15 +114,16 @@ Brush Strokes → Layer Operations → Imports → Plugin Usage
 ### 2. Analyze Locally
 
 - **AI Plugin Detection**: Scans for AI tools (Krita AI Diffusion, etc.)
-- **Tracing Analysis**: Compares imports vs. final artwork
+- **Tracing Analysis**: Compares imports vs. final artwork (edge correlation)
 - **Pattern Analysis**: Human vs. AI workflow patterns
 
-**Classification**:
-- `PureHumanMade`: No AI, no tracing
-- `Referenced`: Used reference images (normal!)
-- `AIAssisted`: AI plugins detected
-- `Traced`: High overlap with imported image
-- `MixedMedia`: Combination of above
+**Classification** (Highest to Lowest Verification Level):
+1. `HumanMade`: Purely human work (references allowed if not traced/visible)
+2. `Traced`: Direct tracing detected (>33% edge correlation)
+3. `MixedMedia`: Imported images visible in final export
+4. `AIAssisted`: AI plugins detected and enabled (lowest verification level)
+
+**Note**: Using reference images is normal and professional! References only affect classification if you directly trace over them (>33% edge correlation) or leave them visible in the final export. Hidden references used for anatomy/pose study maintain the `HumanMade` label.
 
 ### 3. Generate Proof & Timestamp
 

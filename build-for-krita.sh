@@ -99,7 +99,14 @@ mkdir -p krita-plugin/chm_verifier/lib
 # Copy the compiled library
 cp target/release/libchm.dylib krita-plugin/chm_verifier/lib/chm.so
 
-echo "✅ Library copied to: krita-plugin/chm_verifier/lib/chm.so"
+# Fix install_name to use @rpath instead of hardcoded path
+echo "Fixing install_name..."
+install_name_tool -id "@rpath/chm.so" krita-plugin/chm_verifier/lib/chm.so
+
+# Strip any code signature (install_name_tool invalidates signatures)
+codesign --remove-signature krita-plugin/chm_verifier/lib/chm.so 2>/dev/null || true
+
+echo "✅ Library copied and configured: krita-plugin/chm_verifier/lib/chm.so"
 echo ""
 
 # Verify the library
@@ -130,7 +137,7 @@ echo "   OR manually symlink:"
 echo "   ln -s \"\$(pwd)/krita-plugin/chm_verifier\" \"\$HOME/Library/Application Support/krita/pykrita/chm_verifier\""
 echo ""
 echo "2. Open Krita → Settings → Python Plugin Manager"
-echo "3. Enable 'Certified Human-Made Verifier'"
+echo "3. Enable 'Certified Human-Made'"
 echo "4. Restart Krita"
 echo ""
 

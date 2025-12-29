@@ -1,4 +1,4 @@
-# CHM Verifier Plugin - Installation Guide
+# CHM Plugin - Installation Guide
 
 ## Quick Start (Development)
 
@@ -66,7 +66,7 @@ cp krita-plugin/chm_verifier.desktop "$KRITA_PLUGIN_DIR/chm_verifier.desktop"
 1. **Open Krita**
 2. Go to **Settings** → **Configure Krita** (or **Krita** → **Preferences** on macOS)
 3. Select **Python Plugin Manager** from the left sidebar
-4. Find **"Certified Human-Made Verifier"** in the list
+4. Find **"Certified Human-Made"** in the list
 5. Check the box to enable it
 6. Click **OK**
 7. **Restart Krita** (required for plugins to load)
@@ -77,9 +77,9 @@ After restarting Krita:
 
 1. Open the **Scripter** (Tools → Scripts → Scripter)
 2. Check the console output for CHM plugin messages:
-   - Look for: `"CHM Verifier: Setup called"`
-   - Look for: `"CHM Verifier: Loaded CHM library version X.X.X"`
-   - Look for: `"CHM Verifier: Event capture started"`
+   - Look for: `"CHM: Setup called"`
+   - Look for: `"CHM: Loaded CHM library version X.X.X"`
+   - Look for: `"CHM: Event capture started"`
 
 If you see these messages, the plugin is working! ✅
 
@@ -87,7 +87,7 @@ If you see these messages, the plugin is working! ✅
 
 ### Plugin Not Appearing in Plugin Manager
 
-**Issue**: CHM Verifier doesn't appear in the Python Plugin Manager list.
+**Issue**: CHM doesn't appear in the Python Plugin Manager list.
 
 **Solutions**:
 1. Verify the `.desktop` file exists:
@@ -156,7 +156,7 @@ To see detailed debug logs:
 1. Open Krita
 2. Go to **Tools** → **Scripts** → **Scripter**
 3. Keep the Scripter console open while using Krita
-4. All debug messages (prefixed with "CHM Verifier:") will appear here
+4. All debug messages (prefixed with "CHM:") will appear here
 
 You can also check Krita's log file:
 ```bash
