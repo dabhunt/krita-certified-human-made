@@ -27,6 +27,7 @@ from .dependency_checker import check_dependencies, show_dependency_warning
 from .api_client import CHMApiClient
 from .timestamp_service import TripleTimestampService
 from .path_preferences import PathPreferences
+from .session_storage import SessionStorage
 
 
 class CHMExtension(Extension):
@@ -83,10 +84,14 @@ class CHMExtension(Extension):
         # Scan for plugins (Task 1.7)
         self._scan_installed_plugins()
         
+        # Initialize session storage (Task 1.15.1)
+        self.session_storage = SessionStorage(debug_log=self.DEBUG_LOG)
+        
         # Initialize session manager and event capture
         self.session_manager = CHMSessionManager(debug_log=self.DEBUG_LOG)
         self.event_capture = EventCapture(
             self.session_manager,
+            session_storage=self.session_storage,  # Pass storage for persistence
             debug_log=self.DEBUG_LOG
         )
         

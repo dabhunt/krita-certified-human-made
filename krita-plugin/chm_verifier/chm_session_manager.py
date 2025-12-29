@@ -2,10 +2,11 @@
 CHM Session Manager
 
 Manages active CHM sessions per document.
-Handles session lifecycle (create, update, finalize).
+Handles session lifecycle (create, update, finalize, resume).
 """
 
 from .chm_loader import chm
+import json
 
 
 class CHMSessionManager:
@@ -15,15 +16,31 @@ class CHMSessionManager:
         self.active_sessions = {}  # Map: document_ptr -> CHMSession
         self.DEBUG_LOG = debug_log
         
-    def create_session(self, document):
-        """Create a new session for a document"""
+    def create_session(self, document, session_id=None):
+        """
+        Create a new session for a document.
+        
+        Args:
+            document: Krita document
+            session_id: Optional specific session ID (for resuming with same ID)
+            
+        Returns:
+            CHMSession object
+        """
         doc_id = id(document)
         
         if doc_id in self.active_sessions:
             self._log(f"Session already exists for document {doc_id}")
             return self.active_sessions[doc_id]
         
-        session = chm.CHMSession()
+        # Create session with specific ID if provided (for continuity)
+        if session_id:
+            # Note: CHMSession constructor doesn't support custom ID yet
+            # For now, create normal session and log the intended ID
+            session = chm.CHMSession()
+            self._log(f"[PERSIST] Created session with auto-generated ID: {session.id} (requested: {session_id})")
+        else:
+            session = chm.CHMSession()
         
         # Set metadata from document
         session.set_metadata(
@@ -93,8 +110,65 @@ class CHMSessionManager:
         """Check if document has an active session"""
         return id(document) in self.active_sessions
     
+    def import_session(self, document, session_json):
+        """
+        Import session from JSON and associate with document.
+        
+        This allows resuming sessions from previous Krita sessions.
+        
+        Args:
+            document: Krita document
+            session_json: Session data as JSON string
+            
+        Returns:
+            CHMSession object or None if import fails
+        """
+        try:
+            doc_id = id(document)
+            
+            # Parse session JSON
+            session_data = json.loads(session_json)
+            
+            self._log(f"[PERSIST] Importing session from JSON ({len(session_json)} bytes)")
+            
+            # Try to reconstruct session from data
+            # Note: This requires CHMSession to support deserialization
+            # For now, create new session and attempt to restore basic state
+            
+            # Check if session has from_dict method (Python fallback)
+            try:
+                session = chm.CHMSession.from_dict(session_data)
+                self._log(f"[PERSIST] ✓ Session imported via from_dict: {session.id}")
+            except AttributeError:
+                # Rust implementation might not have from_dict
+                # Create new session and manually restore what we can
+                session = chm.CHMSession()
+                self._log(f"[PERSIST] ⚠️  from_dict not available, created new session: {session.id}")
+                self._log(f"[PERSIST]    (Original session ID was: {session_data.get('session_id', 'unknown')})")
+                
+                # Restore metadata if available
+                if 'metadata' in session_data:
+                    session.set_metadata(**session_data['metadata'])
+            
+            # Associate with document
+            self.active_sessions[doc_id] = session
+            
+            # Get event count for logging
+            event_count = session_data.get('event_count', 0) if isinstance(session_data, dict) else 0
+            self._log(f"[PERSIST] ✓ Session associated with document (events: {event_count})")
+            
+            return session
+            
+        except Exception as e:
+            self._log(f"[PERSIST] ❌ Error importing session: {e}")
+            import traceback
+            self._log(f"[PERSIST] Traceback: {traceback.format_exc()}")
+            return None
+    
     def _log(self, message):
         """Debug logging helper"""
         if self.DEBUG_LOG:
+            import sys
             print(f"CHMSessionManager: {message}")
+            sys.stdout.flush()
 
