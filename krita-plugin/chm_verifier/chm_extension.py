@@ -4,7 +4,7 @@ CHM Extension - Main plugin logic
 This class extends Krita's Extension API and manages the lifecycle of CHM sessions.
 """
 
-from krita import Extension
+from krita import Extension, InfoObject
 from PyQt5.QtWidgets import QMessageBox
 import sys
 import os
@@ -194,8 +194,9 @@ class CHMExtension(Extension):
             self._log(f"[EXPORT] Session finalized, proof generated")
             
             # Export image via Krita
+            # Note: exportImage() uses default export settings (no configuration needed)
             self._log(f"[EXPORT] Exporting image to {filename}...")
-            success = doc.exportImage(filename, doc.exportConfiguration())
+            success = doc.exportImage(filename, InfoObject())
             
             if not success:
                 raise Exception("Krita exportImage() returned False")
