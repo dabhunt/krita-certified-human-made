@@ -5,7 +5,7 @@ X-KDE-Library=chm_verifier
 X-Python-2-Compatible=false
 X-Krita-Manual=chm_manual.html
 Name=Certified Human-Made Verifier
-Comment=Generate cryptographic proofs of human-made artwork
+Comment=Generate cryptographic proofs that your art is human-made
 X-Version-Krita-Built-With=5.2.0
 X-Version-Plugin=0.1.0
 

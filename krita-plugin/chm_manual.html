@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Certified Human-Made Verifier - Manual</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            line-height: 1.6;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 0 20px;
+            color: #333;
+        }
+        h1 { color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; }
+        h2 { color: #34495e; margin-top: 30px; }
+        h3 { color: #555; }
+        code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+        .feature-box {
+            background: #e8f4f8;
+            border-left: 4px solid #3498db;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .warning {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        th {
+            background-color: #3498db;
+            color: white;
+        }
+        ul { margin: 10px 0; }
+        li { margin: 5px 0; }
+    </style>
+</head>
+<body>
+    <h1>Certified Human-Made (CHM) Verifier</h1>
+    
+    <div class="feature-box">
+        <strong>Version:</strong> 0.1.0-alpha<br>
+        <strong>Purpose:</strong> Cryptographically prove your artwork is human-made
+    </div>
+
+    <h2>What Is This?</h2>
+    <p>
+        The Certified Human-Made Verifier is a Krita plugin that captures your creative process as you work,
+        generating cryptographic proof that your artwork was made by a human, not AI.
+    </p>
+
+    <h2>How It Works</h2>
+    <ol>
+        <li><strong>Real-time Capture:</strong> Monitors your brush strokes, layers, and workflow as you create</li>
+        <li><strong>Privacy-First Analysis:</strong> All processing happens locally on your computer</li>
+        <li><strong>Smart Classification:</strong> Detects pure human work vs. AI-assisted vs. traced</li>
+        <li><strong>Triple Timestamp Verification:</strong> Immutable timestamps via GitHub, Internet Archive, and CHM Public Log</li>
+        <li><strong>Verifiable Certificates:</strong> Share proofs that anyone can verify</li>
+    </ol>
+
+    <h2>Classification Types</h2>
+    <table>
+        <tr>
+            <th>Type</th>
+            <th>Description</th>
+            <th>Example</th>
+        </tr>
+        <tr>
+            <td><strong>Pure Human-Made</strong></td>
+            <td>No AI assistance, no tracing</td>
+            <td>Drawing from imagination or life</td>
+        </tr>
+        <tr>
+            <td><strong>Referenced</strong></td>
+            <td>Uses reference images but hand-drawn</td>
+            <td>Photo reference for anatomy study</td>
+        </tr>
+        <tr>
+            <td><strong>AI-Assisted</strong></td>
+            <td>AI plugins used for generation/editing</td>
+            <td>Stable Diffusion for backgrounds</td>
+        </tr>
+        <tr>
+            <td><strong>Traced</strong></td>
+            <td>Direct tracing over imported images</td>
+            <td>&gt;70% pixel overlap detected</td>
+        </tr>
+        <tr>
+            <td><strong>Mixed Media</strong></td>
+            <td>Imported images remain visible</td>
+            <td>Photo collage with painting</td>
+        </tr>
+    </table>
+
+    <h2>Using the Plugin</h2>
+    
+    <h3>Starting a Session</h3>
+    <p>When you create or open a document in Krita, the plugin automatically begins monitoring your work.</p>
+
+    <h3>Checking Status</h3>
+    <p>
+        Open <strong>Tools → Scripts → Scripter</strong> to see debug messages confirming the plugin is active.
+        You should see messages like:
+    </p>
+    <ul>
+        <li><code>CHM Verifier: Setup called</code></li>
+        <li><code>CHM Verifier: Loaded CHM library version 0.1.0</code></li>
+        <li><code>CHM Verifier: Event capture started</code></li>
+    </ul>
+
+    <h3>Generating a Certificate</h3>
+    <p><em>(Coming in next update)</em> - Use the verification dialog to generate and export your proof.</p>
+
+    <h2>Key Features</h2>
+    
+    <div class="feature-box">
+        <h3>For Artists:</h3>
+        <ul>
+            <li>✅ One-click certification after finishing artwork</li>
+            <li>✅ Privacy-protected: Your data never leaves your computer</li>
+            <li>✅ Transparent: See exactly what's being verified</li>
+            <li>✅ No account required for local verification</li>
+        </ul>
+    </div>
+
+    <div class="feature-box">
+        <h3>For Verifiers (Commissioners, Galleries):</h3>
+        <ul>
+            <li>✅ Cryptographic proof: ED25519 signatures prevent tampering</li>
+            <li>✅ Triple timestamp: Immutable records via trusted institutions</li>
+            <li>✅ Detailed classification: Know if work is pure human, referenced, etc.</li>
+            <li>✅ Open verification: Anyone can validate without special software</li>
+        </ul>
+    </div>
+
+    <h2>Privacy & Security</h2>
+    <ul>
+        <li><strong>Local-first:</strong> All analysis happens on your computer</li>
+        <li><strong>Encrypted:</strong> Session data uses AES-256-GCM encryption</li>
+        <li><strong>No tracking:</strong> We don't collect any personal data</li>
+        <li><strong>Open source:</strong> All code is publicly auditable on GitHub</li>
+    </ul>
+
+    <div class="warning">
+        <strong>⚠️ Alpha Software Warning:</strong><br>
+        This is early-stage software. Some features are still in development. 
+        Please report any issues on GitHub: <code>krita-certified-human-made</code>
+    </div>
+
+    <h2>Technical Stack</h2>
+    <ul>
+        <li><strong>Rust Core:</strong> Performance and security</li>
+        <li><strong>Python Plugin:</strong> Krita integration</li>
+        <li><strong>Triple Timestamp:</strong> GitHub Gist, Internet Archive, CHM Public Log</li>
+        <li><strong>Cryptography:</strong> AES-256-GCM, ED25519, SHA-256</li>
+    </ul>
+
+    <h2>Troubleshooting</h2>
+    
+    <h3>Plugin not appearing in list?</h3>
+    <ul>
+        <li>Verify the <code>.desktop</code> file is in the correct location (pykrita root, not inside plugin folder)</li>
+        <li>Restart Krita completely</li>
+    </ul>
+
+    <h3>"CHM library not available" error?</h3>
+    <ul>
+        <li>Rebuild the Rust library: <code>cargo build --release</code></li>
+        <li>Copy to plugin: <code>cp target/release/libchm.dylib krita-plugin/chm_verifier/lib/chm.so</code></li>
+        <li>Restart Krita</li>
+    </ul>
+
+    <h3>No debug messages in Scripter?</h3>
+    <ul>
+        <li>Make sure the plugin is enabled in <strong>Settings → Configure Krita → Python Plugin Manager</strong></li>
+        <li>Restart Krita after enabling</li>
+        <li>Open Scripter console <em>before</em> creating/opening a document</li>
+    </ul>
+
+    <h2>Support & Contributing</h2>
+    <ul>
+        <li><strong>Documentation:</strong> See <code>INSTALLATION.md</code> and <code>QUICKSTART.md</code> in the plugin folder</li>
+        <li><strong>Bug Reports:</strong> GitHub Issues</li>
+        <li><strong>License:</strong> GPL-3.0 (aligns with Krita)</li>
+        <li><strong>Community:</strong> Contributions welcome!</li>
+    </ul>
+
+    <h2>Why This Matters</h2>
+    <p>
+        In a world where AI can generate photorealistic art in seconds, <strong>human creativity needs authentication</strong>.
+        This plugin isn't about opposing AI - it's about giving artists a tool to prove their craft when it matters.
+    </p>
+    <p>
+        Artists spend years developing skills. This plugin helps them prove it.
+    </p>
+
+    <hr style="margin: 40px 0;">
+    
+    <p style="text-align: center; color: #777;">
+        <strong>Certified Human-Made Verifier</strong><br>
+        Version 0.1.0-alpha | GPL-3.0 License<br>
+        <em>Making human creativity verifiable</em>
+    </p>
+</body>
+</html>
+
