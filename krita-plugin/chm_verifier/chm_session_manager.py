@@ -44,19 +44,42 @@ class CHMSessionManager:
         doc_id = id(document)
         return self.active_sessions.get(doc_id)
     
-    def finalize_session(self, document):
-        """Finalize and remove session for a document"""
+    def finalize_session(self, document, ai_plugins=None):
+        """
+        Finalize and remove session for a document
+        
+        Args:
+            document: Krita document
+            ai_plugins: Optional list of detected AI plugin dicts
+                       (from PluginMonitor.get_enabled_ai_plugins())
+        
+        Returns:
+            CHMProof object or None
+        """
         doc_id = id(document)
         session = self.active_sessions.get(doc_id)
         
         if not session:
-            self._log(f"No session found for document {doc_id}")
+            self._log(f"[FLOW-ERROR] ❌ No session found for document {doc_id}")
             return None
         
+        self._log(f"[FLOW-3] 🔒 Finalizing session {session.id} (events: {session.event_count})")
+        
+        # Record AI plugins before finalizing (Task 1.7 integration)
+        if ai_plugins:
+            self._log(f"[FLOW-3a] Recording {len(ai_plugins)} AI plugin(s) used...")
+            for plugin in ai_plugins:
+                plugin_name = plugin.get('display_name', plugin.get('name', 'Unknown'))
+                plugin_type = plugin.get('ai_type', 'AI_GENERATION')
+                self._log(f"  → {plugin_name} ({plugin_type})")
+                session.record_plugin_used(plugin_name, plugin_type)
+        
         proof = session.finalize()
+        
+        self._log(f"[FLOW-4] ✓ Session finalized, proof generated: {len(proof.export_json())} bytes")
+        
         del self.active_sessions[doc_id]
         
-        self._log(f"Finalized session for document {doc_id}")
         return proof
     
     def has_session(self, document):

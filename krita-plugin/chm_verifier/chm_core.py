@@ -15,6 +15,48 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any
 
 
+class CHMProof:
+    """
+    Proof object wrapper for session verification data.
+    Provides export_json() method for compatibility.
+    """
+    
+    def __init__(self, proof_data: Dict[str, Any]):
+        """
+        Create a proof object from session data.
+        
+        Args:
+            proof_data: Dictionary containing proof information
+        """
+        self.data = proof_data
+        print(f"[FLOW-4a] 📝 CHMProof created with {len(proof_data)} keys")
+        print(f"[FLOW-4a] Proof keys: {list(proof_data.keys())}")
+        import sys
+        sys.stdout.flush()
+    
+    def export_json(self) -> str:
+        """
+        Export proof as JSON string.
+        
+        Returns:
+            JSON string representation of the proof
+        """
+        json_str = json.dumps(self.data, indent=2)
+        print(f"[FLOW-4b] 📤 Proof exported as JSON ({len(json_str)} bytes)")
+        import sys
+        sys.stdout.flush()
+        return json_str
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Get proof data as dictionary.
+        
+        Returns:
+            Proof data dictionary
+        """
+        return self.data
+
+
 class CHMFallback:
     """Pure Python implementation of CHM core functionality"""
     
@@ -184,15 +226,19 @@ class CHMSession:
         """Get session ID"""
         return self.session_id
     
-    def finalize(self) -> Dict[str, Any]:
+    def finalize(self) -> 'CHMProof':
         """
         Finalize the session and generate a proof summary.
         
         Returns:
-            Dictionary with session proof data
+            CHMProof object with session verification data
         """
         if self.finalized:
             raise RuntimeError("Session already finalized")
+        
+        print(f"[FLOW-3a] 🔐 Finalizing session {self.session_id} with {len(self.events)} events")
+        import sys
+        sys.stdout.flush()
         
         self.finalized = True
         end_time = datetime.utcnow()
@@ -203,12 +249,25 @@ class CHMSession:
         layer_count = sum(1 for e in self.events if e.get("type") == "layer_created")
         import_count = sum(1 for e in self.events if e.get("type") == "import")
         
+        print(f"[FLOW-3b] 📊 Event summary: {stroke_count} strokes, {layer_count} layers, {import_count} imports")
+        sys.stdout.flush()
+        
         # Generate event hash
         events_json = json.dumps(self.events, sort_keys=True)
         events_hash = hashlib.sha256(events_json.encode()).hexdigest()
         
+        print(f"[FLOW-3c] 🔑 Events hash: {events_hash[:16]}...")
+        sys.stdout.flush()
+        
+        # Classify session
+        classification = self._classify()
+        confidence = 1.0 if classification == "HumanMade" else 0.5  # Simple confidence
+        
+        print(f"[FLOW-3d] 🏷️ Classification: {classification} (confidence: {confidence})")
+        sys.stdout.flush()
+        
         # Create proof summary
-        proof = {
+        proof_data = {
             "version": "1.0",
             "session_id": self.session_id,
             "document_id": self.document_id,
@@ -219,14 +278,19 @@ class CHMSession:
                 "total_events": len(self.events),
                 "stroke_count": stroke_count,
                 "layer_count": layer_count,
-                "import_count": import_count
+                "import_count": import_count,
+                "session_duration_secs": int(duration)  # Add for UI display
             },
             "events_hash": events_hash,
-            "classification": self._classify(),
+            "classification": classification,
+            "confidence": confidence,
             "metadata": self.metadata
         }
         
-        return proof
+        print(f"[FLOW-3e] ✅ Proof data created, wrapping in CHMProof object")
+        sys.stdout.flush()
+        
+        return CHMProof(proof_data)
     
     def _classify(self) -> str:
         """

@@ -17,13 +17,32 @@ class VerificationDialog(QDialog):
     
     def __init__(self, proof_data=None, parent=None):
         super().__init__(parent)
-        self.proof_data = proof_data
+        
+        # Handle both CHMProof objects and dictionaries
+        if proof_data:
+            if hasattr(proof_data, 'to_dict'):
+                # CHMProof object
+                self.proof_data = proof_data.to_dict()
+                print(f"[FLOW-5a] 📦 Received CHMProof object, extracted dict with {len(self.proof_data)} keys")
+            elif isinstance(proof_data, dict):
+                # Direct dictionary
+                self.proof_data = proof_data
+                print(f"[FLOW-5a] 📦 Received proof dict with {len(self.proof_data)} keys")
+            else:
+                self.proof_data = None
+                print(f"[FLOW-ERROR] ❌ Unknown proof type: {type(proof_data)}")
+        else:
+            self.proof_data = None
+        
+        import sys
+        sys.stdout.flush()
+        
         self.setWindowTitle("CHM Verification Proof")
         self.setMinimumSize(600, 500)
         self.setup_ui()
         
-        if proof_data:
-            self.display_proof(proof_data)
+        if self.proof_data:
+            self.display_proof(self.proof_data)
     
     def setup_ui(self):
         """Setup the UI components"""
@@ -102,24 +121,45 @@ class VerificationDialog(QDialog):
     
     def display_proof(self, proof_data):
         """Display proof data in the dialog"""
+        import sys
+        print(f"[FLOW-5] 📊 Displaying proof in dialog")
+        print(f"[FLOW-5] Proof data keys: {list(proof_data.keys())}")
+        sys.stdout.flush()
+        
         # Classification
         classification = proof_data.get("classification", "Unknown")
         confidence = proof_data.get("confidence", 0.0)
+        
+        print(f"[FLOW-6] Classification: {classification}, Confidence: {confidence}")
+        sys.stdout.flush()
         
         self.class_label.setText(classification)
         self.confidence_label.setText(f"{confidence * 100:.1f}%")
         
         # Session info
-        self.session_id_label.setText(proof_data.get("session_id", "N/A")[:16] + "...")
+        session_id = proof_data.get("session_id", "N/A")
+        print(f"[FLOW-6] Session ID: {session_id}")
+        sys.stdout.flush()
+        
+        self.session_id_label.setText(session_id[:16] + "..." if len(session_id) > 16 else session_id)
         
         event_summary = proof_data.get("event_summary", {})
         duration = event_summary.get("session_duration_secs", 0)
+        total_events = event_summary.get("total_events", 0)
+        stroke_count = event_summary.get("stroke_count", 0)
+        
+        print(f"[FLOW-6] Events: {total_events}, Strokes: {stroke_count}, Duration: {duration}s")
+        sys.stdout.flush()
+        
         self.duration_label.setText(f"{duration} seconds ({duration // 60}m {duration % 60}s)")
-        self.events_label.setText(str(event_summary.get("total_events", 0)))
-        self.strokes_label.setText(str(event_summary.get("stroke_count", 0)))
+        self.events_label.setText(str(total_events))
+        self.strokes_label.setText(str(stroke_count))
         
         # Full JSON
         json_str = json.dumps(proof_data, indent=2)
+        print(f"[FLOW-7] ✓ JSON exported ({len(json_str)} bytes)")
+        sys.stdout.flush()
+        
         self.proof_text.setPlainText(json_str)
     
     def copy_to_clipboard(self):

@@ -3,12 +3,20 @@ Event Capture
 
 Captures Krita events (strokes, layers, imports) and records them to CHM sessions.
 
-IMPLEMENTATION NOTE (Dec 28, 2025):
-Krita's Python API has limitations with stroke signal detection:
-- view.strokeBegin/strokeEnd signals exist in API docs but are not reliably
-  exposed through PyQt5 SIP wrappers (objects appear as generic QObject)
-- SOLUTION: Use polling-based detection via document.modified() flag changes
-- FUTURE: Consider QEvent filter on canvas widget for direct event capture
+IMPLEMENTATION NOTE (Dec 28, 2025 - BFROS CONCLUSION):
+After systematic testing (ROAA/BFROS sessions), we confirmed:
+
+❌ FAILED APPROACHES:
+1. view.strokeBegin/strokeEnd - NOT exposed through PyQt5 SIP wrappers
+2. canvas.pointerPress/pointerRelease - NOT exposed (hasattr returns False)
+3. Qt Event Filter on QOpenGLWidget - Filters VIEWPORT (1938x781), not document (500x500)
+   - QOpenGLWidget is the display renderer, NOT the input canvas
+   - Drawing events don't pass through the GL widget
+
+✅ WORKING SOLUTION (per krita-api-research.md):
+- **Document modification polling** via `doc.modified()` flag
+- Poll every 500ms to detect drawing activity
+- Simple, reliable, works with all tools
 
 Based on Krita API research (docs/krita-api-research.md):
 - Stroke events: Document modification polling (strokeBegin/End unavailable via SIP)
@@ -17,8 +25,8 @@ Based on Krita API research (docs/krita-api-research.md):
 """
 
 from krita import Krita
-from PyQt5.QtCore import QTimer, QObject, QEvent
-from PyQt5.QtWidgets import QOpenGLWidget
+from PyQt5.QtCore import QTimer, QObject, QEvent, Qt
+from PyQt5.QtWidgets import QOpenGLWidget, QWidget
 import time
 
 
@@ -36,29 +44,69 @@ class CanvasEventFilter(QObject):
         self.DEBUG_LOG = debug_log
         self.stroke_in_progress = False
         self.stroke_start_time = None
+        self.event_count = 0  # BFROS: Track if eventFilter is called at all
+        self.last_log_time = 0  # BFROS: Rate limit logging
         
     def eventFilter(self, obj, event):
-        """Intercept Qt events from canvas to detect strokes"""
+        """Intercept Qt events from canvas to detect strokes (Approach 3 fallback)"""
         try:
-            # Detect stroke beginning
-            if event.type() in (QEvent.MouseButtonPress, QEvent.TabletPress):
-                if not self.stroke_in_progress:
+            self.event_count += 1
+            event_type = event.type()
+            
+            # ROAA-Approach3: Log first 20 events with names to see what we're getting
+            if self.event_count <= 20 and self.DEBUG_LOG:
+                event_name = self._get_event_name(event_type)
+                print(f"[ROAA-Approach3] Event #{self.event_count}: type={event_type} ({event_name})")
+                import sys
+                sys.stdout.flush()
+            
+            # Log event count periodically
+            current_time = time.time()
+            if self.DEBUG_LOG and (current_time - self.last_log_time > 10):
+                self.last_log_time = current_time
+                print(f"[ROAA-Approach3] Received {self.event_count} events total")
+                import sys
+                sys.stdout.flush()
+            
+            # Detect stroke beginning (try various event types)
+            if event_type in (QEvent.MouseButtonPress, QEvent.TabletPress, QEvent.MouseMove):
+                # On first MouseMove or Press, consider it stroke start
+                if not self.stroke_in_progress and event_type in (QEvent.MouseButtonPress, QEvent.TabletPress):
                     self.stroke_in_progress = True
                     self.stroke_start_time = time.time()
                     self._on_stroke_begin()
                     
             # Detect stroke ending
-            elif event.type() in (QEvent.MouseButtonRelease, QEvent.TabletRelease):
+            elif event_type in (QEvent.MouseButtonRelease, QEvent.TabletRelease):
                 if self.stroke_in_progress:
                     self.stroke_in_progress = False
                     self._on_stroke_end()
                     
         except Exception as e:
             if self.DEBUG_LOG:
-                print(f"CanvasEventFilter error: {e}")
+                import traceback
+                print(f"[EventFilter] ERROR: {e}")
+                print(f"Traceback: {traceback.format_exc()}")
+                import sys
+                sys.stdout.flush()
         
         # Don't block the event - let Krita process it normally
         return False
+    
+    def _get_event_name(self, event_type):
+        """Convert QEvent type number to human-readable name"""
+        # Common Qt event types
+        event_names = {
+            0: "None", 1: "Timer", 2: "MouseButtonPress", 3: "MouseButtonRelease",
+            4: "MouseButtonDblClick", 5: "MouseMove", 6: "KeyPress", 7: "KeyRelease",
+            8: "FocusIn", 9: "FocusOut", 10: "Enter", 11: "Leave",
+            12: "Paint", 13: "Move", 14: "Resize", 17: "Show", 18: "Hide",
+            24: "WindowActivate", 25: "WindowDeactivate",
+            68: "ChildAdded", 69: "ChildPolished", 71: "ChildRemoved",
+            87: "TabletMove", 88: "TabletPress", 89: "TabletRelease",
+            129: "DynamicPropertyChange", 152: "UpdateRequest"
+        }
+        return event_names.get(event_type, f"Unknown({event_type})")
     
     def _on_stroke_begin(self):
         """Handle stroke beginning"""
@@ -109,13 +157,16 @@ class EventCapture:
         self.canvas_event_filter = CanvasEventFilter(session_manager, debug_log)
         self.canvas_filter_installed = False
         
-        # Timer for polling-based layer detection (fallback)
-        self.layer_poll_timer = QTimer()
-        self.layer_poll_timer.timeout.connect(self.poll_changes)
-        self.layer_poll_timer.setInterval(2000)  # Poll every 2 seconds
+        # Timer for polling-based detection (PRIMARY METHOD per krita-api-research.md)
+        self.poll_timer = QTimer()
+        self.poll_timer.timeout.connect(self.poll_changes)
+        self.poll_timer.setInterval(500)  # Poll every 500ms for responsive stroke detection
         
         # Track document modification state for stroke detection fallback
         self.doc_modified_state = {}  # doc_id -> bool (was modified last poll)
+        
+        # BFROS: Track additional metrics to detect ongoing activity
+        self.doc_undo_count = {}  # doc_id -> int (undo stack count)
         
     def start_capture(self):
         """Start capturing events globally"""
@@ -125,23 +176,71 @@ class EventCapture:
         # Log Krita version
         self._log(f"Krita version: {app.version()}")
         
+        # BFROS: Log which signals we're connecting to
+        if self.DEBUG_LOG:
+            self._log("[BFROS] Connecting to Krita signals: imageCreated, imageClosed, imageSaved, viewCreated")
+        
         # Connect global document lifecycle events
         notifier.imageCreated.connect(self.on_image_created)
         notifier.imageClosed.connect(self.on_image_closed)
         notifier.imageSaved.connect(self.on_image_saved)
         notifier.viewCreated.connect(self.on_view_created)
         
-        # Try to install canvas event filter for stroke detection
-        self._install_canvas_event_filter()
+        # Start polling timer (PRIMARY stroke detection method)
+        self.poll_timer.start()
         
-        # Start layer polling
-        self.layer_poll_timer.start()
+        if self.DEBUG_LOG:
+            self._log("[BFROS-FINAL] Using document.modified() polling for stroke detection (500ms interval)")
         
         self._log("Event capture started (global signals connected)")
         
+        # BFROS: Check if documents already exist (opened before plugin loaded)
+        existing_docs = app.documents()
+        
+        if self.DEBUG_LOG:
+            self._log(f"[BFROS-STARTUP] Checking for existing documents: {existing_docs}")
+            self._log(f"[BFROS-STARTUP] Number of existing documents: {len(existing_docs) if existing_docs else 0}")
+        
+        if existing_docs:
+            if self.DEBUG_LOG:
+                self._log(f"[BFROS] Found {len(existing_docs)} existing document(s) - will create sessions")
+        else:
+            if self.DEBUG_LOG:
+                self._log(f"[BFROS] No existing documents at startup - sessions will be created via on_image_created signal")
+        
         # Connect to any already-open documents/views
-        for doc in app.documents():
+        for doc in existing_docs:
             self.connect_document_signals(doc)
+            
+            # BFROS: Treat existing documents like newly created ones (retry canvas filter)
+            if self.DEBUG_LOG:
+                self._log(f"[BFROS] Existing document: {doc.name()} ({doc.width()}x{doc.height()})")
+            
+            # BFROS FIX: Create session for existing documents (critical bug fix!)
+            if not self.session_manager.has_session(doc):
+                self._log(f"[BFROS-FIX] Creating session for existing document: {doc.name()}")
+                session = self.session_manager.create_session(doc)
+                
+                # Set metadata
+                try:
+                    import platform
+                    session.set_metadata(
+                        document_name=doc.name(),
+                        canvas_width=doc.width(),
+                        canvas_height=doc.height(),
+                        krita_version=app.version(),
+                        os_info=f"{platform.system()} {platform.release()}"
+                    )
+                    self._log(f"[BFROS-FIX] ✓ Session created for existing document: {session.id}")
+                except Exception as e:
+                    self._log(f"[BFROS-FIX] Error setting metadata: {e}")
+            else:
+                self._log(f"[BFROS] Session already exists for document: {doc.name()}")
+            
+            # Retry canvas filter for this existing document (with delays)
+            QTimer.singleShot(100, lambda d=doc: self._delayed_canvas_retry(d, "100ms after detecting existing doc"))
+            QTimer.singleShot(500, lambda d=doc: self._delayed_canvas_retry(d, "500ms after detecting existing doc"))
+            QTimer.singleShot(1000, lambda d=doc: self._delayed_canvas_retry(d, "1000ms after detecting existing doc"))
         
         for window in app.windows():
             for view in window.views():
@@ -149,7 +248,7 @@ class EventCapture:
     
     def stop_capture(self):
         """Stop capturing events"""
-        self.layer_poll_timer.stop()
+        self.poll_timer.stop()
         self._log("Event capture stopped")
     
     def _install_canvas_event_filter(self):
@@ -159,6 +258,9 @@ class EventCapture:
         This is a workaround for Krita's strokeBegin/strokeEnd signals
         not being accessible through Python SIP wrappers.
         """
+        if self.DEBUG_LOG:
+            self._log("=== ATTEMPTING TO INSTALL CANVAS EVENT FILTER ===")
+        
         try:
             app = Krita.instance()
             active_window = app.activeWindow()
@@ -167,25 +269,112 @@ class EventCapture:
                 self._log("No active window - will retry canvas filter on view creation")
                 return False
             
+            if self.DEBUG_LOG:
+                self._log(f"Active window found: {active_window}")
+            
             # Get the Qt window widget
             qwindow = active_window.qwindow()
             if not qwindow:
                 self._log("No qwindow available - canvas filter unavailable")
                 return False
             
-            # Find the canvas widget (typically QOpenGLWidget)
-            canvas = qwindow.findChild(QOpenGLWidget)
-            if canvas:
+            if self.DEBUG_LOG:
+                self._log(f"QWindow found: {type(qwindow)}")
+                # List all child widgets to see what's available
+                all_children = qwindow.findChildren(QObject)
+                self._log(f"Total child objects in window: {len(all_children)}")
+                
+                # Look for OpenGL widgets
+                opengl_widgets = qwindow.findChildren(QOpenGLWidget)
+                self._log(f"QOpenGLWidget children found: {len(opengl_widgets)}")
+                
+                # Try to find ANY widget type that might be the canvas
+                from PyQt5.QtWidgets import QWidget
+                all_widgets = qwindow.findChildren(QWidget)
+                self._log(f"Total QWidget children: {len(all_widgets)}")
+                
+                # Log first few widget types
+                widget_types = {}
+                for i, w in enumerate(all_widgets[:20]):  # First 20
+                    wtype = type(w).__name__
+                    widget_types[wtype] = widget_types.get(wtype, 0) + 1
+                self._log(f"Widget types found: {widget_types}")
+            
+            # Find ALL canvas widgets (there are multiple)
+            all_canvases = qwindow.findChildren(QOpenGLWidget)
+            
+            if not all_canvases:
+                self._log("❌ No QOpenGLWidget children found - using fallback polling")
+                return False
+            
+            # BFROS FIX: Install filter on ALL canvases, but prioritize the largest visible one
+            installed_count = 0
+            main_canvas_found = False
+            
+            # BFROS: Check if filter is still alive (Python GC issue check)
+            if self.DEBUG_LOG:
+                self._log(f"[BFROS] Canvas filter object: {self.canvas_event_filter}")
+                self._log(f"[BFROS] Filter events received so far: {self.canvas_event_filter.event_count}")
+                
+                # BFROS: Search for ALL possible input widgets (not just QOpenGLWidget)
+                from PyQt5.QtWidgets import QWidget
+                all_widgets = qwindow.findChildren(QWidget)
+                self._log(f"[BFROS] Searching {len(all_widgets)} widgets for input-enabled ones...")
+                
+                input_widgets = []
+                for widget in all_widgets:
+                    # Look for widgets that accept mouse/tablet input
+                    if widget.isEnabled() and widget.testAttribute(Qt.WA_InputMethodEnabled) or True:  # Check all for now
+                        widget_info = f"{type(widget).__name__} size={widget.width()}x{widget.height()} visible={widget.isVisible()}"
+                        # Look for widgets close to document size (500x500) or viewport size
+                        if 400 < widget.width() < 600 and 400 < widget.height() < 600:
+                            input_widgets.append((widget, widget_info))
+                            self._log(f"[BFROS] ★ POTENTIAL DOCUMENT CANVAS: {widget_info}")
+                        elif widget.width() > 1000:  # Viewport-sized
+                            input_widgets.append((widget, widget_info))
+                            self._log(f"[BFROS] ★ POTENTIAL VIEWPORT: {widget_info}")
+                
+                if not input_widgets:
+                    self._log(f"[BFROS] No widgets matching document size (500x500) found!")
+            
+            for i, canvas in enumerate(all_canvases):
+                if self.DEBUG_LOG:
+                    self._log(f"QOpenGLWidget #{i}: visible={canvas.isVisible()}, enabled={canvas.isEnabled()}, size={canvas.width()}x{canvas.height()}")
+                
+                # BFROS: Remove old filter first (prevent multiple installs on same object)
+                canvas.removeEventFilter(self.canvas_event_filter)
+                
+                # Install filter on ALL canvases (we don't know which is the drawing canvas)
                 canvas.installEventFilter(self.canvas_event_filter)
+                installed_count += 1
+                
+                if self.DEBUG_LOG:
+                    self._log(f"  → Filter installed on canvas #{i}")
+                
+                # Track if we found a likely main canvas (large, visible, enabled)
+                if canvas.isVisible() and canvas.isEnabled() and canvas.width() > 200:
+                    main_canvas_found = True
+                    if self.DEBUG_LOG:
+                        self._log(f"  ↑ This looks like the main drawing canvas (filter should receive events here)")
+            
+            if installed_count > 0:
                 self.canvas_filter_installed = True
-                self._log("✓ Canvas event filter installed for stroke detection")
+                self._log(f"✓ Canvas event filter installed on {installed_count} canvas(es)")
+                
+                if not main_canvas_found and self.DEBUG_LOG:
+                    self._log("⚠️  Warning: No large visible canvas found - main canvas may not be ready yet")
+                
+                if self.DEBUG_LOG:
+                    self._log("=== EVENT FILTER INSTALLATION COMPLETE ===")
                 return True
             else:
-                self._log("Canvas widget not found - using fallback polling")
+                self._log("❌ Could not install canvas filter - using fallback polling")
                 return False
                 
         except Exception as e:
-            self._log(f"Could not install canvas event filter: {e}")
+            self._log(f"❌ Could not install canvas event filter: {e}")
+            import traceback
+            self._log(f"Traceback: {traceback.format_exc()}")
             self._log("Will use fallback document polling for stroke detection")
             return False
     
@@ -206,9 +395,10 @@ class EventCapture:
         """
         Connect to view-level signals.
         
-        NOTE: Krita's strokeBegin/strokeEnd signals are not accessible via
-        Python SIP wrappers (objects appear as generic PyQt5.QtCore.QObject).
-        We use canvas event filter instead for stroke detection.
+        ROAA APPROACH: Try ALL possible methods systematically:
+        1. view.strokeBegin/strokeEnd (official API - try it!)
+        2. canvas.pointerPress/pointerRelease (official Canvas API)
+        3. Event filter fallback (if signals don't work)
         """
         view_id = id(view)
         
@@ -216,67 +406,158 @@ class EventCapture:
             return  # Already connected
         
         if self.DEBUG_LOG:
-            self._log(f"View created: {view_id}")
-            self._log(f"View type: {type(view).__name__} (expected: generic QObject due to SIP wrapping)")
+            self._log(f"[ROAA] View created: {view_id}, type: {type(view)}")
         
-        # Try to install canvas event filter if not already installed
-        if not self.canvas_filter_installed:
-            self._install_canvas_event_filter()
+        stroke_method_found = False
         
-        # Try to connect viewChanged for basic activity tracking
+        # APPROACH 1: Try view.strokeBegin/strokeEnd (SIMPLEST - official Krita API)
+        if self.DEBUG_LOG:
+            self._log(f"[ROAA] Approach 1: Trying view.strokeBegin/strokeEnd signals...")
+        
+        try:
+            if hasattr(view, 'strokeBegin') and hasattr(view, 'strokeEnd'):
+                view.strokeBegin.connect(lambda: self.on_stroke_begin(view))
+                view.strokeEnd.connect(lambda: self.on_stroke_end(view))
+                stroke_method_found = True
+                if self.DEBUG_LOG:
+                    self._log(f"[ROAA] ✓ SUCCESS: view.strokeBegin/strokeEnd connected!")
+            else:
+                if self.DEBUG_LOG:
+                    self._log(f"[ROAA] ✗ view.strokeBegin/strokeEnd not available (hasattr failed)")
+        except Exception as e:
+            if self.DEBUG_LOG:
+                self._log(f"[ROAA] ✗ Could not connect view.strokeBegin/strokeEnd: {e}")
+        
+        # APPROACH 2: Try canvas.pointerPress/pointerRelease (Krita Canvas API)
+        if not stroke_method_found:
+            if self.DEBUG_LOG:
+                self._log(f"[ROAA] Approach 2: Trying canvas.pointerPress/pointerRelease signals...")
+            
+            try:
+                if hasattr(view, 'canvas'):
+                    canvas = view.canvas()
+                    if canvas:
+                        if self.DEBUG_LOG:
+                            self._log(f"[ROAA] Canvas object: {type(canvas)}, has pointerPress: {hasattr(canvas, 'pointerPress')}")
+                        
+                        if hasattr(canvas, 'pointerPress') and hasattr(canvas, 'pointerRelease'):
+                            canvas.pointerPress.connect(lambda: self._on_canvas_pointer_press(view))
+                            canvas.pointerRelease.connect(lambda: self._on_canvas_pointer_release(view))
+                            stroke_method_found = True
+                            if self.DEBUG_LOG:
+                                self._log(f"[ROAA] ✓ SUCCESS: canvas.pointerPress/pointerRelease connected!")
+                        else:
+                            if self.DEBUG_LOG:
+                                self._log(f"[ROAA] ✗ canvas.pointerPress/pointerRelease not available")
+            except Exception as e:
+                if self.DEBUG_LOG:
+                    self._log(f"[ROAA] ✗ Could not connect canvas signals: {e}")
+        
+        # APPROACH 3: Event filter fallback (if signals don't work)
+        if not stroke_method_found:
+            if self.DEBUG_LOG:
+                self._log(f"[ROAA] Approach 3: Falling back to Qt event filter...")
+            
+            if not self.canvas_filter_installed:
+                self._install_canvas_event_filter()
+        
+        # Connect viewChanged for basic activity tracking
         try:
             if hasattr(view, 'viewChanged'):
                 view.viewChanged.connect(lambda: self.on_view_changed(view))
-                if self.DEBUG_LOG:
-                    self._log(f"✓ Connected viewChanged signal for view {view_id}")
-        except Exception as e:
-            if self.DEBUG_LOG:
-                self._log(f"Could not connect viewChanged: {e}")
+        except:
+            pass
         
         self.connected_views.add(view_id)
         
+        method_used = "strokeBegin/strokeEnd" if stroke_method_found else "event filter fallback"
         if self.DEBUG_LOG:
-            detection_method = "canvas event filter" if self.canvas_filter_installed else "document modification polling"
-            self._log(f"✓ View {view_id} connected (stroke detection via {detection_method})")
+            self._log(f"[ROAA] ✓ View {view_id} configured (using: {method_used})")
     
     def on_image_created(self):
         """Handler for new document creation"""
+        if self.DEBUG_LOG:
+            self._log("[BFROS] ===== on_image_created SIGNAL FIRED =====")
+        
         app = Krita.instance()
         doc = app.activeDocument()
         
         if not doc:
+            if self.DEBUG_LOG:
+                self._log("[BFROS] WARNING: imageCreated fired but no activeDocument!")
             return
         
         self._log(f"Document created: {doc.name()}")
         
-        # Create CHM session for new document
-        if not self.session_manager.has_session(doc):
-            session = self.session_manager.create_session(doc)
-            
-            # Set metadata
+        if self.DEBUG_LOG:
             try:
-                import platform
-                session.set_metadata(
-                    document_name=doc.name(),
-                    canvas_width=doc.width(),
-                    canvas_height=doc.height(),
-                    krita_version=app.version(),
-                    os_info=f"{platform.system()} {platform.release()}"
-                )
+                self._log(f"[BFROS] Document details: {doc.width()}x{doc.height()}")
             except Exception as e:
-                self._log(f"Error setting metadata: {e}")
+                self._log(f"[BFROS] Error getting document size: {e}")
+        
+        # BFROS FIX #3: Try IMMEDIATELY after document creation
+        if self.DEBUG_LOG:
+            self._log("[BFROS] Attempting canvas filter installation IMMEDIATELY after imageCreated")
+        self._install_canvas_event_filter()
+        
+        # BFROS FIX #3: Also try with delays (canvas might need time to initialize)
+        QTimer.singleShot(500, lambda: self._delayed_canvas_retry(doc, "500ms delay"))
+        QTimer.singleShot(1000, lambda: self._delayed_canvas_retry(doc, "1000ms delay"))
+        QTimer.singleShot(2000, lambda: self._delayed_canvas_retry(doc, "2000ms delay"))
+        
+        # Create CHM session for new document
+        if self.DEBUG_LOG:
+            self._log(f"[BFROS-CREATE] Checking if session exists for new document...")
+            self._log(f"[BFROS-CREATE] has_session result: {self.session_manager.has_session(doc)}")
+        
+        if not self.session_manager.has_session(doc):
+            if self.DEBUG_LOG:
+                self._log(f"[BFROS-CREATE] Creating NEW session for document: {doc.name()}")
+            
+            try:
+                session = self.session_manager.create_session(doc)
+                
+                if self.DEBUG_LOG:
+                    self._log(f"[BFROS-CREATE] ✓ Session created: {session.id}")
+                
+                # Set metadata
+                try:
+                    import platform
+                    session.set_metadata(
+                        document_name=doc.name(),
+                        canvas_width=doc.width(),
+                        canvas_height=doc.height(),
+                        krita_version=app.version(),
+                        os_info=f"{platform.system()} {platform.release()}"
+                    )
+                    if self.DEBUG_LOG:
+                        self._log(f"[BFROS-CREATE] ✓ Metadata set for session {session.id}")
+                except Exception as e:
+                    self._log(f"[BFROS-CREATE] Error setting metadata: {e}")
+            except Exception as e:
+                self._log(f"[BFROS-CREATE] ❌ CRITICAL ERROR creating session: {e}")
+                import traceback
+                self._log(f"[BFROS-CREATE] Traceback: {traceback.format_exc()}")
+        else:
+            if self.DEBUG_LOG:
+                self._log(f"[BFROS-CREATE] Session already exists for document {doc.name()}")
         
         # Connect signals for this document
         self.connect_document_signals(doc)
     
     def on_image_closed(self):
         """Handler for document close"""
+        if self.DEBUG_LOG:
+            self._log("[BFROS] ===== on_image_closed SIGNAL FIRED =====")
         # Note: The document is already closed at this point
         # Session cleanup happens when user explicitly finalizes
         self._log("Document closed event received")
     
     def on_image_saved(self):
         """Handler for document save"""
+        if self.DEBUG_LOG:
+            self._log("[BFROS] ===== on_image_saved SIGNAL FIRED =====")
+        
         app = Krita.instance()
         doc = app.activeDocument()
         
@@ -301,8 +582,59 @@ class EventCapture:
     
     def on_view_created(self, view):
         """Handler for new view creation"""
+        if self.DEBUG_LOG:
+            self._log(f"[BFROS] ===== on_view_created SIGNAL FIRED (view: {id(view)}) =====")
+        
         self._log(f"View created: {id(view)}")
+        
+        # BFROS: Check if this view has a document
+        try:
+            view_doc = view.document()
+            if view_doc and self.DEBUG_LOG:
+                self._log(f"[BFROS] View's document: {view_doc.name()} ({view_doc.width()}x{view_doc.height()})")
+        except Exception as e:
+            if self.DEBUG_LOG:
+                self._log(f"[BFROS] Error getting view's document: {e}")
+        
+        # BFROS FIX #3: Try canvas filter when view is created (canvas might be ready now)
+        if self.DEBUG_LOG:
+            self._log("[BFROS] View created - attempting canvas filter installation")
+        self._install_canvas_event_filter()
+        
+        # Also try with small delay (view might need time to fully initialize)
+        QTimer.singleShot(200, lambda: self._delayed_canvas_retry_simple("200ms after viewCreated"))
+        QTimer.singleShot(500, lambda: self._delayed_canvas_retry_simple("500ms after viewCreated"))
+        QTimer.singleShot(1000, lambda: self._delayed_canvas_retry_simple("1000ms after viewCreated"))
+        QTimer.singleShot(2000, lambda: self._delayed_canvas_retry_simple("2000ms after viewCreated"))
+        
         self.connect_view_signals(view)
+    
+    def _delayed_canvas_retry(self, doc, delay_label):
+        """
+        Retry canvas filter installation after a delay.
+        Canvas widget might not be fully initialized immediately after imageCreated.
+        """
+        if self.DEBUG_LOG:
+            self._log(f"[BFROS] Retrying canvas filter installation ({delay_label})")
+        
+        # Check document size to see if canvas should exist
+        try:
+            doc_width = doc.width()
+            doc_height = doc.height()
+            self._log(f"[BFROS] Document size: {doc_width}x{doc_height} (expected canvas of this size)")
+        except:
+            pass
+        
+        result = self._install_canvas_event_filter()
+        
+        if result and self.DEBUG_LOG:
+            self._log(f"[BFROS] ✓ Canvas filter installed successfully at {delay_label}")
+    
+    def _delayed_canvas_retry_simple(self, delay_label):
+        """Simpler delayed retry without document reference"""
+        if self.DEBUG_LOG:
+            self._log(f"[BFROS] Retrying canvas filter installation ({delay_label})")
+        self._install_canvas_event_filter()
     
     def on_view_changed(self, view):
         """Handler for view changes (zoom, pan, or potential drawing activity)"""
@@ -312,6 +644,12 @@ class EventCapture:
         if not doc:
             return
         
+        # BFROS FIX #3: Try to install canvas filter on view change (canvas might now be ready)
+        if not self.canvas_filter_installed:
+            if self.DEBUG_LOG:
+                self._log("[BFROS] View changed - retrying canvas filter")
+            self._install_canvas_event_filter()
+        
         # Check if document has been modified (indicates drawing/editing occurred)
         if doc.modified():
             session = self.session_manager.get_session(doc)
@@ -320,20 +658,39 @@ class EventCapture:
                 # This is a fallback since we don't have strokeBegin/strokeEnd
                 pass  # For now, just know activity happened
     
+    def _on_canvas_pointer_press(self, view):
+        """Handler for canvas pointer press (Approach 2)"""
+        if not self.stroke_in_progress:
+            self.stroke_in_progress = True
+            self.stroke_start_time = time.time()
+            if self.DEBUG_LOG:
+                self._log("[ROAA-Approach2] Stroke began (canvas.pointerPress)")
+    
+    def _on_canvas_pointer_release(self, view):
+        """Handler for canvas pointer release (Approach 2)"""
+        if self.stroke_in_progress:
+            self.stroke_in_progress = False
+            self._record_stroke_for_view(view, method="canvas.pointerRelease")
+    
     def on_stroke_begin(self, view):
-        """Handler for stroke beginning"""
+        """Handler for stroke beginning (Approach 1 - view.strokeBegin)"""
         # Query current brush (not included in stroke signals)
         try:
             app = Krita.instance()
             # Note: currentBrush() may not exist in all Krita versions
             # This is a best-effort capture
             self.current_brush_name = "Unknown Brush"
-            self._log("Stroke began")
+            if self.DEBUG_LOG:
+                self._log("[ROAA-Approach1] Stroke began (view.strokeBegin)")
         except Exception as e:
             self._log(f"Error in stroke_begin: {e}")
     
     def on_stroke_end(self, view):
-        """Handler for stroke ending"""
+        """Handler for stroke ending (Approach 1 - view.strokeEnd)"""
+        self._record_stroke_for_view(view, method="view.strokeEnd")
+    
+    def _record_stroke_for_view(self, view, method="unknown"):
+        """Common stroke recording logic for all approaches"""
         doc = view.document()
         
         if not doc:
@@ -357,7 +714,8 @@ class EventCapture:
             )
             
             if self.DEBUG_LOG:
-                self._log(f"Stroke recorded (total: {session.event_count})")
+                duration = time.time() - self.stroke_start_time if hasattr(self, 'stroke_start_time') else 0
+                self._log(f"[ROAA-{method}] ✓ Stroke recorded (duration: {duration:.2f}s, total: {session.event_count})")
         except Exception as e:
             self._log(f"Error recording stroke: {e}")
     
@@ -376,11 +734,20 @@ class EventCapture:
     
     def poll_changes(self):
         """
-        Poll for changes (fallback for missing signals).
+        Poll for changes (PRIMARY stroke detection method).
         Detects: layer changes, document modifications (strokes)
         """
         app = Krita.instance()
         doc = app.activeDocument()
+        
+        if self.DEBUG_LOG:
+            # Log every 10th poll to confirm it's running
+            if not hasattr(self, '_poll_count'):
+                self._poll_count = 0
+            self._poll_count += 1
+            if self._poll_count % 10 == 0:
+                doc_name = doc.name() if doc else "None"
+                self._log(f"[POLLING] Poll #{self._poll_count}, active document: {doc_name}")
         
         if not doc:
             return
@@ -390,7 +757,7 @@ class EventCapture:
         # Poll layer changes
         self.poll_layer_changes(doc, doc_id)
         
-        # Poll document modification (stroke detection fallback)
+        # Poll document modification (PRIMARY stroke detection)
         self.poll_document_modification(doc, doc_id)
     
     def poll_layer_changes(self, doc, doc_id):
@@ -433,25 +800,116 @@ class EventCapture:
     
     def poll_document_modification(self, doc, doc_id):
         """
-        Poll document modification state to detect drawing activity.
-        Fallback for when strokeBegin/strokeEnd signals are unavailable.
+        Poll document modification state AND undo stack to detect drawing activity.
+        PRIMARY METHOD per krita-api-research.md (signals unavailable via SIP).
+        
+        BFROS: Using BOTH modified flag AND undo stack count for robust detection.
         """
         try:
             current_modified = doc.modified()
             previous_modified = self.doc_modified_state.get(doc_id, False)
             
-            # Detect transition from unmodified to modified (drawing occurred)
+            # BFROS: Also track undo stack size (more reliable for detecting strokes)
+            # Each stroke creates an undo entry, so stack size increases
+            try:
+                # Krita's Document doesn't expose undo stack directly, so we'll use a workaround
+                # We'll track a combination of metrics
+                current_undo_count = 0  # Placeholder - will implement below
+            except:
+                current_undo_count = 0
+            
+            previous_undo_count = self.doc_undo_count.get(doc_id, 0)
+            
+            # BFROS: Log EVERY poll to see if modified flag EVER changes
+            if self.DEBUG_LOG:
+                if not hasattr(self, '_mod_poll_count'):
+                    self._mod_poll_count = 0
+                self._mod_poll_count += 1
+                
+                # Log every 20 polls to see the modified state
+                if self._mod_poll_count % 20 == 0:
+                    self._log(f"[POLLING-DEBUG] Poll #{self._mod_poll_count}: modified={current_modified}, previous={previous_modified}, undo={current_undo_count}")
+            
+            # BFROS APPROACH: Detect ANY modification (not just transitions)
+            # If document is modified, record activity every N seconds to avoid spam
+            
+            # Track last stroke time per document to rate-limit
+            if not hasattr(self, '_last_stroke_time'):
+                self._last_stroke_time = {}
+            
+            import time
+            current_time = time.time()
+            last_stroke = self._last_stroke_time.get(doc_id, 0)
+            time_since_last_stroke = current_time - last_stroke
+            
+            # Record stroke if:
+            # 1. Document is modified AND
+            # 2. Either: First stroke (transition) OR enough time passed (ongoing work)
+            should_record = False
+            
+            # Approach A: Transition detection (first stroke)
             if current_modified and not previous_modified:
+                should_record = True
+                if self.DEBUG_LOG:
+                    self._log(f"[BFROS-STROKE] Trigger: First modification (transition)")
+            
+            # Approach B: Ongoing activity (subsequent strokes)
+            # Record every 2 seconds if still modified (indicates ongoing drawing)
+            elif current_modified and time_since_last_stroke > 2.0:
+                should_record = True
+                if self.DEBUG_LOG:
+                    self._log(f"[BFROS-STROKE] Trigger: Ongoing activity ({time_since_last_stroke:.1f}s since last)")
+            
+            if should_record:
                 session = self.session_manager.get_session(doc)
+                
+                # ROAA FALLBACK: If no session exists, create one NOW (cleaner approach)
+                if not session:
+                    if self.DEBUG_LOG:
+                        self._log(f"[ROAA-FALLBACK] ⚠️  No session found for {doc.name()}, creating on-the-fly...")
+                    
+                    try:
+                        from krita import Krita
+                        app = Krita.instance()
+                        session = self.session_manager.create_session(doc)
+                        
+                        # Set metadata
+                        import platform
+                        session.set_metadata(
+                            document_name=doc.name(),
+                            canvas_width=doc.width(),
+                            canvas_height=doc.height(),
+                            krita_version=app.version(),
+                            os_info=f"{platform.system()} {platform.release()}"
+                        )
+                        
+                        if self.DEBUG_LOG:
+                            self._log(f"[ROAA-FALLBACK] ✓ Emergency session created: {session.id}")
+                    except Exception as e:
+                        self._log(f"[ROAA-FALLBACK] ❌ Failed to create emergency session: {e}")
+                        import traceback
+                        self._log(f"[ROAA-FALLBACK] Traceback: {traceback.format_exc()}")
+                
                 if session:
                     # Record a stroke event (generic since we don't have coordinates)
+                    if self.DEBUG_LOG:
+                        self._log(f"[FLOW-1] 🎨 Stroke detected! Recording to session {session.id}")
+                    
                     session.record_stroke(
-                        x=0.0,  # Placeholder
+                        x=0.0,  # Placeholder - polling doesn't provide coordinates
                         y=0.0,  # Placeholder
                         pressure=0.5,  # Default
                         brush_name="Unknown"
                     )
-                    self._log(f"Activity detected (modified flag changed, total events: {session.event_count})")
+                    
+                    # Update last stroke time for rate limiting
+                    self._last_stroke_time[doc_id] = current_time
+                    
+                    if self.DEBUG_LOG:
+                        self._log(f"[FLOW-2] ✓ Stroke recorded (session {session.id}, total events: {session.event_count})")
+                else:
+                    if self.DEBUG_LOG:
+                        self._log(f"[FLOW-ERROR] ❌ Could not create or find session for document {doc.name()}!")
             
             # Update state
             self.doc_modified_state[doc_id] = current_modified

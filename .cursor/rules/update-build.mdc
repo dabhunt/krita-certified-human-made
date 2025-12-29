@@ -1,0 +1,6 @@
+---
+alwaysApply: true
+---
+
+After completing all intended changes, run the Build + Update tasks.json command then ask the user to test your changes, specifying what to look for.
+ ./build-for-krita.sh && ./dev-update-plugin.sh 
