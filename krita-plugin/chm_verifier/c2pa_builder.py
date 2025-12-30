@@ -310,14 +310,15 @@ class CHMtoC2PABuilder:
         key_path: str
     ) -> Dict[str, Any]:
         """
-        Sign C2PA manifest using ED25519 (via Rust).
+        Sign C2PA manifest using Pure Python ED25519.
         
-        This uses our existing Rust ED25519 signing infrastructure - no Python
-        cryptography dependencies required! Works in any environment (Krita, AppImage, etc.)
+        Uses ONLY Python stdlib (hashlib) - no external dependencies!
+        Works everywhere: Krita, AppImage, Flatpak, Windows, Linux, macOS.
+        No code signing issues!
         
         Args:
             manifest: C2PA manifest dict
-            cert_path: Path to X.509 certificate (ED25519 or RSA)
+            cert_path: Path to X.509 certificate (ED25519)
             key_path: Path to private key (ED25519 PEM format)
             
         Returns:
@@ -328,11 +329,10 @@ class CHMtoC2PABuilder:
         log_message(f"[C2PA-SIGN] Key: {key_path}")
         
         try:
-            # Import our Rust library
-            from .lib import chm
             import base64
+            from . import ed25519_pure
             
-            log_message("[C2PA-SIGN] ✅ Using Rust ED25519 signing (no Python dependencies!)")
+            log_message("[C2PA-SIGN] ✅ Using Pure Python ED25519 (stdlib only - no dependencies!)")
             
             # Read certificate
             with open(cert_path, 'rb') as f:
@@ -346,8 +346,8 @@ class CHMtoC2PABuilder:
             # ED25519 keys are 32 bytes, base64-encoded in PEM
             key_bytes = self._parse_ed25519_pem(key_pem)
             
-            if not key_bytes:
-                raise ValueError("Failed to parse ED25519 key from PEM")
+            if not key_bytes or len(key_bytes) != 32:
+                raise ValueError(f"Failed to parse ED25519 key from PEM (got {len(key_bytes) if key_bytes else 0} bytes, need 32)")
             
             log_message(f"[C2PA-SIGN] ✅ ED25519 key parsed: {len(key_bytes)} bytes")
             
@@ -357,8 +357,8 @@ class CHMtoC2PABuilder:
             
             log_message(f"[C2PA-SIGN] Manifest size: {len(manifest_bytes)} bytes")
             
-            # Sign with Rust ED25519
-            signature_bytes = chm.sign_bytes(manifest_bytes, key_bytes)
+            # Sign with Pure Python ED25519
+            signature_bytes = ed25519_pure.sign(manifest_bytes, key_bytes)
             
             log_message(f"[C2PA-SIGN] ✅ Signature generated: {len(signature_bytes)} bytes")
             
@@ -370,8 +370,8 @@ class CHMtoC2PABuilder:
                 'signed_at': datetime.utcnow().isoformat() + 'Z'
             }
             
-            log_message("[C2PA-SIGN] ✅ Manifest signed successfully with ED25519!")
-            log_message("[C2PA-SIGN] ✅ Used Rust signing (no Python cryptography needed)")
+            log_message("[C2PA-SIGN] ✅ Manifest signed successfully with Pure Python ED25519!")
+            log_message("[C2PA-SIGN] ✅ No external dependencies - works everywhere!")
             
             return manifest
             
