@@ -19,6 +19,7 @@ import json
 import struct
 import zlib
 from typing import Dict, Any
+from .logging_util import log_message
 
 DEBUG_LOG = True
 
@@ -40,30 +41,42 @@ def embed_c2pa_manifest_in_png(image_path: str, manifest: Dict[str, Any]) -> boo
     Returns:
         True if embedding successful, False otherwise
     """
-    if DEBUG_LOG:
-        print(f"[PNG-C2PA] Embedding manifest in PNG: {image_path}")
+    log_message("[PNG-C2PA-DEBUG-1] embed_c2pa_manifest_in_png called")
+    log_message(f"[PNG-C2PA-DEBUG-2] image_path={image_path}")
+    log_message(f"[PNG-C2PA-DEBUG-3] manifest type={type(manifest)}")
+    log_message(f"[PNG-C2PA-DEBUG-4] manifest keys={list(manifest.keys()) if isinstance(manifest, dict) else 'NOT_DICT'}")
     
     try:
+        log_message("[PNG-C2PA-DEBUG-5] Attempting to import Pillow...")
+        
         # Try using Pillow's PngInfo
         from PIL import Image, PngImagePlugin
+        
+        log_message("[PNG-C2PA-DEBUG-6] Pillow imported successfully")
+        log_message("[PNG-C2PA-DEBUG-7] Opening image file...")
         
         # Read PNG
         img = Image.open(image_path)
         
+        log_message(f"[PNG-C2PA-DEBUG-8] Image opened, format={img.format}")
+        
         if img.format != 'PNG':
-            if DEBUG_LOG:
-                print(f"[PNG-C2PA] ❌ Not a PNG image: {img.format}")
+            log_message(f"[PNG-C2PA] ❌ Not a PNG image: {img.format}")
             return False
+        
+        log_message("[PNG-C2PA-DEBUG-9] Serializing manifest to JSON...")
         
         # Serialize manifest to JSON bytes
         manifest_json = json.dumps(manifest, indent=2)
         manifest_bytes = manifest_json.encode('utf-8')
         
-        if DEBUG_LOG:
-            print(f"[PNG-C2PA] Manifest size: {len(manifest_bytes)} bytes")
+        log_message(f"[PNG-C2PA] Manifest size: {len(manifest_bytes)} bytes")
+        log_message("[PNG-C2PA-DEBUG-10] Creating PngInfo object...")
         
         # Create PNG metadata container
         pnginfo = PngImagePlugin.PngInfo()
+        
+        log_message("[PNG-C2PA-DEBUG-11] Adding iTXt chunk...")
         
         # Add C2PA manifest as 'caBX' chunk
         # Note: Pillow's add_text only supports standard chunks (tEXt, zTXt, iTXt)
@@ -73,29 +86,32 @@ def embed_c2pa_manifest_in_png(image_path: str, manifest: Dict[str, Any]) -> boo
         # This is not spec-compliant but allows testing without deep PNG manipulation
         pnginfo.add_itxt("C2PA", manifest_json, zip=True)
         
-        if DEBUG_LOG:
-            print("[PNG-C2PA] ⚠️ Using iTXt chunk (not spec-compliant 'caBX')")
-            print("[PNG-C2PA] → This is a fallback for testing")
-            print("[PNG-C2PA] → Production should use c2pa-python or proper chunk writer")
+        log_message("[PNG-C2PA] ⚠️ Using iTXt chunk (not spec-compliant 'caBX')")
+        log_message("[PNG-C2PA] → This is a fallback for testing")
+        log_message("[PNG-C2PA] → Production should use c2pa-python or proper chunk writer")
+        log_message(f"[PNG-C2PA-DEBUG-12] Saving modified PNG to {image_path}...")
         
         # Save PNG with embedded manifest
         img.save(image_path, pnginfo=pnginfo)
         
-        if DEBUG_LOG:
-            print(f"[PNG-C2PA] ✅ Manifest embedded successfully")
+        log_message("[PNG-C2PA-DEBUG-13] Save completed")
+        log_message("[PNG-C2PA] ✅ Manifest embedded successfully")
         
         return True
         
-    except ImportError:
-        if DEBUG_LOG:
-            print("[PNG-C2PA] ❌ Pillow not available - cannot embed")
+    except ImportError as e:
+        log_message(f"[PNG-C2PA] ❌ Pillow not available: {e}")
+        log_message("[PNG-C2PA-DEBUG-ERROR] Import error details:")
+        import traceback
+        log_message(traceback.format_exc())
         return False
         
     except Exception as e:
-        if DEBUG_LOG:
-            print(f"[PNG-C2PA] ❌ Embedding failed: {e}")
-            import traceback
-            print(f"[PNG-C2PA] Traceback: {traceback.format_exc()}")
+        log_message(f"[PNG-C2PA] ❌ Embedding failed: {e}")
+        log_message(f"[PNG-C2PA-DEBUG-ERROR] Exception type: {type(e).__name__}")
+        log_message("[PNG-C2PA-DEBUG-ERROR] Full traceback:")
+        import traceback
+        log_message(traceback.format_exc())
         return False
 
 

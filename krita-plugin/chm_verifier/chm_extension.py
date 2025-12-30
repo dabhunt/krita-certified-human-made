@@ -98,17 +98,22 @@ class CHMExtension(Extension):
         self._log(f"Path preferences initialized (default: {self.path_prefs.default_documents_path})")
         
         # Initialize C2PA builder (Phase 3: C2PA Integration)
+        self._log("[CHM-INIT] Initializing C2PA builder...")
         try:
+            self._log("[CHM-INIT] Importing CHMtoC2PABuilder...")
             from .c2pa_builder import CHMtoC2PABuilder
+            self._log("[CHM-INIT] Import successful, creating instance...")
             self.c2pa_builder = CHMtoC2PABuilder(debug_log=self.DEBUG_LOG)
             self.c2pa_enabled = True  # Can be toggled via settings
-            if self.DEBUG_LOG:
-                print(f"[CHM-INIT] C2PA builder initialized (enabled: {self.c2pa_enabled})")
+            self._log(f"[CHM-INIT] ✅ C2PA builder initialized (enabled: {self.c2pa_enabled})")
         except Exception as e:
-            if self.DEBUG_LOG:
-                print(f"[CHM-INIT] ⚠️  C2PA builder not available: {e}")
+            self._log(f"[CHM-INIT] ❌ C2PA builder not available: {e}")
+            self._log(f"[CHM-INIT] Exception type: {type(e).__name__}")
+            import traceback
+            self._log(f"[CHM-INIT] Full traceback:\n{traceback.format_exc()}")
             self.c2pa_builder = None
             self.c2pa_enabled = False
+            self._log("[CHM-INIT] C2PA disabled - plugin will continue without C2PA embedding")
         
         # Auto-start event capture
         self.start_capture()
@@ -357,9 +362,17 @@ class CHMExtension(Extension):
             
             # Embed C2PA manifest if enabled (Phase 3: C2PA Integration)
             c2pa_status = "Not embedded (disabled)"
+            
+            # BFROS: Detailed diagnostic logging
+            self._log(f"[C2PA-DEBUG-1] c2pa_enabled={getattr(self, 'c2pa_enabled', 'ATTR_MISSING')}")
+            self._log(f"[C2PA-DEBUG-2] c2pa_builder={getattr(self, 'c2pa_builder', 'ATTR_MISSING')}")
+            
             if self.c2pa_enabled and self.c2pa_builder:
                 try:
                     self._log("[EXPORT] Embedding C2PA Content Credentials...")
+                    self._log(f"[C2PA-DEBUG-3] Starting manifest generation...")
+                    self._log(f"[C2PA-DEBUG-4] proof_dict keys: {list(proof_dict.keys())}")
+                    self._log(f"[C2PA-DEBUG-5] proof_dict size: {len(json.dumps(proof_dict))} bytes")
                     
                     # Generate C2PA manifest from proof
                     manifest = self.c2pa_builder.generate_manifest(
@@ -369,24 +382,40 @@ class CHMExtension(Extension):
                         privacy_mode="lite"  # Aggregate data only (privacy-preserving)
                     )
                     
+                    self._log(f"[C2PA-DEBUG-6] Manifest generation result: {type(manifest)}")
+                    self._log(f"[C2PA-DEBUG-7] Manifest is None: {manifest is None}")
+                    
                     if manifest:
+                        self._log(f"[C2PA-DEBUG-8] Manifest keys: {list(manifest.keys()) if isinstance(manifest, dict) else 'NOT_A_DICT'}")
+                        self._log(f"[C2PA-DEBUG-9] Manifest size: {len(json.dumps(manifest))} bytes")
+                        self._log(f"[C2PA-DEBUG-10] Target file: {filename}")
+                        self._log(f"[C2PA-DEBUG-11] File exists: {os.path.exists(filename)}")
+                        
                         # Embed manifest in exported image
+                        self._log(f"[C2PA-DEBUG-12] Calling embed_in_image...")
                         success = self.c2pa_builder.embed_in_image(filename, manifest)
+                        
+                        self._log(f"[C2PA-DEBUG-13] Embedding result: {success}")
                         
                         if success:
                             self._log("[EXPORT] ✅ C2PA manifest embedded successfully")
                             c2pa_status = "✓ C2PA embedded (unsigned)"
                         else:
-                            self._log("[EXPORT] ⚠️  C2PA embedding failed")
+                            self._log("[EXPORT] ⚠️  C2PA embedding failed (returned False)")
                             c2pa_status = "⚠️  C2PA embedding failed"
                     else:
-                        self._log("[EXPORT] ⚠️  C2PA manifest generation failed")
+                        self._log("[EXPORT] ⚠️  C2PA manifest generation failed (returned None)")
                         c2pa_status = "⚠️  C2PA generation failed"
                         
                 except Exception as e:
-                    self._log(f"[EXPORT] ⚠️  C2PA error (non-fatal): {e}")
+                    self._log(f"[EXPORT] ❌ C2PA error (non-fatal): {e}")
+                    self._log(f"[C2PA-DEBUG-ERROR] Exception type: {type(e).__name__}")
+                    import traceback
+                    self._log(f"[C2PA-DEBUG-ERROR] Traceback:\n{traceback.format_exc()}")
                     c2pa_status = f"⚠️  C2PA error: {str(e)[:50]}"
                     # Non-fatal - proof still valid without C2PA
+            else:
+                self._log(f"[C2PA-DEBUG-SKIP] C2PA skipped - enabled={getattr(self, 'c2pa_enabled', False)}, builder={self.c2pa_builder is not None}")
             
             # Show success message with timestamp URLs
             message = (

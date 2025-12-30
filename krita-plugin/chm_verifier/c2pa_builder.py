@@ -21,6 +21,7 @@ import json
 import os
 from typing import Optional, Dict, List, Any
 from datetime import datetime
+from .logging_util import log_message
 
 # Global debug flag
 DEBUG_LOG = True
@@ -393,24 +394,36 @@ class CHMtoC2PABuilder:
     def _embed_png(self, image_path: str, manifest: Dict[str, Any]) -> bool:
         """Embed C2PA manifest in PNG file"""
         
+        log_message("[C2PA-EMBED-DEBUG-1] _embed_png called")
+        log_message(f"[C2PA-EMBED-DEBUG-2] image_path={image_path}")
+        log_message(f"[C2PA-EMBED-DEBUG-3] c2pa_available={self.c2pa_available}")
+        log_message(f"[C2PA-EMBED-DEBUG-4] use_fallback_png={self.use_fallback_png}")
+        
         if self.c2pa_available and not self.use_fallback_png:
             # Use c2pa-python native embedding
-            if self.DEBUG_LOG:
-                print("[C2PA] Using c2pa-python for PNG embedding...")
+            log_message("[C2PA] Using c2pa-python for PNG embedding...")
             
             # TODO: Implement c2pa-python PNG embedding
             # This requires deeper integration with c2pa-python API
             
-            if self.DEBUG_LOG:
-                print("[C2PA] ⚠️ c2pa-python PNG embedding not yet implemented")
+            log_message("[C2PA] ⚠️ c2pa-python PNG embedding not yet implemented")
             return False
         else:
             # Use fallback custom PNG embedder
-            if self.DEBUG_LOG:
-                print("[C2PA] Using fallback custom PNG embedder...")
+            log_message("[C2PA-EMBED-DEBUG-5] Using fallback PNG embedder")
+            log_message("[C2PA-EMBED-DEBUG-6] About to import png_c2pa_embedder")
             
-            from .png_c2pa_embedder import embed_c2pa_manifest_in_png
-            return embed_c2pa_manifest_in_png(image_path, manifest)
+            try:
+                from .png_c2pa_embedder import embed_c2pa_manifest_in_png
+                log_message("[C2PA-EMBED-DEBUG-7] Import successful, calling embedder")
+                result = embed_c2pa_manifest_in_png(image_path, manifest)
+                log_message(f"[C2PA-EMBED-DEBUG-8] Embedder returned: {result}")
+                return result
+            except Exception as e:
+                log_message(f"[C2PA-EMBED-DEBUG-ERROR] Import/call failed: {e}")
+                import traceback
+                log_message(f"[C2PA-EMBED-DEBUG-ERROR] Traceback:\n{traceback.format_exc()}")
+                return False
     
     def _embed_jpeg(self, image_path: str, manifest: Dict[str, Any]) -> bool:
         """Embed C2PA manifest in JPEG file"""
