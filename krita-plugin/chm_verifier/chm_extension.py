@@ -224,12 +224,13 @@ class CHMExtension(Extension):
             
             self._log(f"[EXPORT] ✓ Image exported successfully")
             
-            # Finalize session WITH artwork path (computes file hash for duplicate detection)
-            self._log("[EXPORT] Finalizing session with file hash computation...")
+            # Generate proof from session snapshot (keeps original session alive)
+            self._log("[EXPORT] Generating proof from session snapshot...")
             proof = self.session_manager.finalize_session(
                 doc, 
-                artwork_path=filename,  # ← Pass artwork path for dual-hash
-                ai_plugins=ai_plugins
+                artwork_path=filename,  # ← Pass artwork path for file hash
+                ai_plugins=ai_plugins,
+                for_export=True  # ← Create snapshot, don't destroy active session
             )
             
             if not proof:

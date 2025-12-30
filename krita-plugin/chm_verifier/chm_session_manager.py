@@ -61,15 +61,19 @@ class CHMSessionManager:
         doc_id = id(document)
         return self.active_sessions.get(doc_id)
     
-    def finalize_session(self, document, artwork_path=None, ai_plugins=None):
+    def finalize_session(self, document, artwork_path=None, ai_plugins=None, for_export=False):
         """
-        Finalize and remove session for a document
+        Finalize session and generate proof.
+        
+        For CHM export (for_export=True):  Creates snapshot, finalizes snapshot, returns proof
+        For document close (for_export=False): Finalizes actual session, removes from memory
         
         Args:
             document: Krita document
             artwork_path: Optional path to exported artwork (for dual-hash computation)
             ai_plugins: Optional list of detected AI plugin dicts
                        (from PluginMonitor.get_enabled_ai_plugins())
+            for_export: If True, create snapshot for proof (keeps original session alive)
         
         Returns:
             CHMProof object or None
@@ -78,31 +82,53 @@ class CHMSessionManager:
         session = self.active_sessions.get(doc_id)
         
         if not session:
-            self._log(f"[FLOW-ERROR] ❌ No session found for document {doc_id}")
+            self._log(f"[FINALIZE-ERROR] ❌ No session found for document {doc_id}")
             return None
         
-        self._log(f"[FLOW-3] 🔒 Finalizing session {session.id} (events: {session.event_count})")
+        self._log(f"[FINALIZE-1] Session {session.id} (events: {session.event_count}, for_export={for_export})")
         
-        # Record AI plugins before finalizing (Task 1.7 integration)
+        # For export: Create snapshot so original session stays alive
+        if for_export:
+            self._log(f"[FINALIZE-2] Creating session snapshot for proof generation...")
+            if hasattr(session, 'create_snapshot'):
+                session_to_finalize = session.create_snapshot()
+                self._log(f"[FINALIZE-2a] ✓ Snapshot created (original session stays active)")
+            else:
+                # Fallback: Use session directly but don't remove from memory
+                session_to_finalize = session
+                self._log(f"[FINALIZE-2a] ⚠️ No snapshot support, using original session")
+        else:
+            # For document close: Finalize the actual session
+            self._log(f"[FINALIZE-2] Finalizing actual session (document closing)...")
+            session_to_finalize = session
+        
+        # Record AI plugins before finalizing
         if ai_plugins:
-            self._log(f"[FLOW-3a] Recording {len(ai_plugins)} AI plugin(s) used...")
+            self._log(f"[FINALIZE-3] Recording {len(ai_plugins)} AI plugin(s) used...")
             for plugin in ai_plugins:
                 plugin_name = plugin.get('display_name', plugin.get('name', 'Unknown'))
                 plugin_type = plugin.get('ai_type', 'AI_GENERATION')
                 self._log(f"  → {plugin_name} ({plugin_type})")
-                session.record_plugin_used(plugin_name, plugin_type)
+                # Record on the session that will be finalized
+                if hasattr(session_to_finalize, 'record_plugin_used'):
+                    session_to_finalize.record_plugin_used(plugin_name, plugin_type)
         
         # Finalize with artwork path for dual-hash computation
         if artwork_path:
-            self._log(f"[FLOW-3b] Computing dual-hash for: {artwork_path}")
-            proof = session.finalize(artwork_path)
+            self._log(f"[FINALIZE-4] Computing file hash for: {artwork_path}")
+            proof = session_to_finalize.finalize(artwork_path)
         else:
-            self._log(f"[FLOW-3b] No artwork path provided - using placeholder hashes")
-            proof = session.finalize()
+            self._log(f"[FINALIZE-4] No artwork path (using placeholder hashes)")
+            proof = session_to_finalize.finalize()
         
-        self._log(f"[FLOW-4] ✓ Session finalized, proof generated: {len(proof.export_json())} bytes")
+        self._log(f"[FINALIZE-5] ✓ Proof generated: {len(proof.export_json())} bytes")
         
-        del self.active_sessions[doc_id]
+        # Only remove session from memory if document is closing (not for export)
+        if not for_export:
+            self._log(f"[FINALIZE-6] Removing session from memory (document closed)")
+            del self.active_sessions[doc_id]
+        else:
+            self._log(f"[FINALIZE-6] Original session still active (can continue recording)")
         
         return proof
     
@@ -114,7 +140,8 @@ class CHMSessionManager:
         """
         Import session from JSON and associate with document.
         
-        This allows resuming sessions from previous Krita sessions.
+        Restores full session state including all recorded events,
+        allowing artists to continue accumulating events across sessions.
         
         Args:
             document: Krita document
@@ -129,40 +156,52 @@ class CHMSessionManager:
             # Parse session JSON
             session_data = json.loads(session_json)
             
-            self._log(f"[PERSIST] Importing session from JSON ({len(session_json)} bytes)")
+            self._log(f"[IMPORT-1] Importing session from JSON ({len(session_json)} bytes)")
+            self._log(f"[IMPORT-2] Session data keys: {list(session_data.keys())}")
             
-            # Try to reconstruct session from data
-            # Note: This requires CHMSession to support deserialization
-            # For now, create new session and attempt to restore basic state
+            # Create new session manually to restore full state
+            from datetime import datetime
             
-            # Check if session has from_dict method (Python fallback)
-            try:
-                session = chm.CHMSession.from_dict(session_data)
-                self._log(f"[PERSIST] ✓ Session imported via from_dict: {session.id}")
-            except AttributeError:
-                # Rust implementation might not have from_dict
-                # Create new session and manually restore what we can
-                session = chm.CHMSession()
-                self._log(f"[PERSIST] ⚠️  from_dict not available, created new session: {session.id}")
-                self._log(f"[PERSIST]    (Original session ID was: {session_data.get('session_id', 'unknown')})")
-                
-                # Restore metadata if available
-                if 'metadata' in session_data:
-                    session.set_metadata(**session_data['metadata'])
+            session = chm.CHMSession()
+            
+            # Restore session properties
+            if 'session_id' in session_data:
+                session.id = session_data['session_id']
+                session.session_id = session_data['session_id']
+                self._log(f"[IMPORT-3] Restored session ID: {session.id}")
+            
+            if 'start_time' in session_data:
+                # Parse ISO format timestamp
+                start_time_str = session_data['start_time'].rstrip('Z')
+                session.start_time = datetime.fromisoformat(start_time_str)
+                self._log(f"[IMPORT-4] Restored start_time: {session.start_time}")
+            
+            if 'events' in session_data:
+                session.events = session_data['events']
+                self._log(f"[IMPORT-5] Restored {len(session.events)} events")
+            else:
+                self._log(f"[IMPORT-5] ⚠️ No events in saved session data")
+            
+            if 'metadata' in session_data:
+                session.metadata = session_data['metadata']
+                self._log(f"[IMPORT-6] Restored metadata: {list(session.metadata.keys())}")
+            
+            # Keep session unfinalized so it can continue recording
+            session.finalized = False
+            self._log(f"[IMPORT-7] Session ready (finalized=False)")
             
             # Associate with document
             self.active_sessions[doc_id] = session
             
-            # Get event count for logging
-            event_count = session_data.get('event_count', 0) if isinstance(session_data, dict) else 0
-            self._log(f"[PERSIST] ✓ Session associated with document (events: {event_count})")
+            event_count = len(session.events) if hasattr(session, 'events') else 0
+            self._log(f"[IMPORT-8] ✅ Session restored: {session.id} ({event_count} events)")
             
             return session
             
         except Exception as e:
-            self._log(f"[PERSIST] ❌ Error importing session: {e}")
+            self._log(f"[IMPORT-ERROR] ❌ Error importing session: {e}")
             import traceback
-            self._log(f"[PERSIST] Traceback: {traceback.format_exc()}")
+            self._log(f"[IMPORT-ERROR] Traceback: {traceback.format_exc()}")
             return None
     
     def session_to_json(self, session):

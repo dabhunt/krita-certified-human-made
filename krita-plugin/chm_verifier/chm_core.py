@@ -363,8 +363,31 @@ class CHMSession:
             'duration_secs': int(self.duration_secs),
             'is_finalized': bool(self.is_finalized),
             'public_key': str(self.public_key),
-            'metadata': self.get_metadata()
+            'metadata': self.get_metadata(),
+            'events': self.events  # Include events for full session restoration
         }
+    
+    def create_snapshot(self) -> 'CHMSession':
+        """
+        Create a deep copy of this session for proof generation.
+        
+        This allows generating proofs (which require finalization)
+        without destroying the active session that's still recording events.
+        
+        Returns:
+            New CHMSession with same data but different identity
+        """
+        import copy
+        
+        snapshot = CHMSession(self.document_id)
+        snapshot.id = self.id  # Keep same ID for continuity
+        snapshot.session_id = self.session_id
+        snapshot.start_time = self.start_time
+        snapshot.events = copy.deepcopy(self.events)  # Deep copy of events
+        snapshot.metadata = self.metadata.copy()
+        snapshot.finalized = False  # Snapshot starts unfinalized
+        
+        return snapshot
     
     def _classify(self) -> str:
         """
