@@ -216,34 +216,19 @@ class EventCapture:
             if self.DEBUG_LOG:
                 self._log(f"[BFROS] No existing documents at startup - sessions will be created via on_image_created signal")
         
-        # Connect to any already-open documents/views
+        # Connect to any already-open documents/views  
+        # THIS IS WHERE "part2" gets handled when Krita starts with file already open!
         for doc in existing_docs:
             self.connect_document_signals(doc)
             
-            # BFROS: Treat existing documents like newly created ones (retry canvas filter)
             if self.DEBUG_LOG:
                 self._log(f"[BFROS] Existing document: {doc.name()} ({doc.width()}x{doc.height()})")
             
-            # BFROS FIX: Create session for existing documents (critical bug fix!)
+            # === RESUME SESSION FOR EXISTING DOCUMENT ===
             if not self.session_manager.has_session(doc):
-                self._log(f"[BFROS-FIX] Creating session for existing document: {doc.name()}")
-                session = self.session_manager.create_session(doc)
-                
-                # Set metadata
-                try:
-                    import platform
-                    session.set_metadata(
-                        document_name=doc.name(),
-                        canvas_width=doc.width(),
-                        canvas_height=doc.height(),
-                        krita_version=app.version(),
-                        os_info=f"{platform.system()} {platform.release()}"
-                    )
-                    self._log(f"[BFROS-FIX] ✓ Session created for existing document: {session.id}")
-                except Exception as e:
-                    self._log(f"[BFROS-FIX] Error setting metadata: {e}")
+                self._try_resume_or_create_session(doc, "existing doc at startup")
             else:
-                self._log(f"[BFROS] Session already exists for document: {doc.name()}")
+                self._log(f"[BFROS] Session already exists in memory for: {doc.name()}")
             
             # Retry canvas filter for this existing document (with delays)
             QTimer.singleShot(100, lambda d=doc: self._delayed_canvas_retry(d, "100ms after detecting existing doc"))
@@ -258,6 +243,117 @@ class EventCapture:
         """Stop capturing events"""
         self.poll_timer.stop()
         self._log("Event capture stopped")
+    
+    def _try_resume_or_create_session(self, doc, context=""):
+        """
+        Try to resume session from disk, or create new session if not found.
+        
+        DRY helper used by both:
+        - start_capture() for existing documents at plugin startup
+        - on_image_created() for newly opened documents
+        
+        Args:
+            doc: Krita document
+            context: Description of when this is called (for logging)
+        """
+        from krita import Krita
+        app = Krita.instance()
+        
+        session_resumed = False
+        
+        if self.DEBUG_LOG:
+            self._log(f"[RESUME-1] {context}: Trying to resume session for {doc.name()}")
+        
+        # Check session_storage availability
+        if self.DEBUG_LOG:
+            storage_status = "available" if self.session_storage else "None"
+            self._log(f"[RESUME-2] SessionStorage: {storage_status}")
+        
+        if self.session_storage:
+            try:
+                filepath = doc.fileName()
+                
+                if self.DEBUG_LOG:
+                    filepath_status = filepath if filepath else "None (unsaved document)"
+                    self._log(f"[RESUME-3] Document filepath: {filepath_status}")
+                
+                if filepath:  # Existing file (not a new unsaved document)
+                    self._log(f"[RESUME-4] File has path: {filepath}")
+                    
+                    # Generate session key for this file
+                    session_key = self.session_storage.get_session_key_for_file(filepath)
+                    
+                    if self.DEBUG_LOG:
+                        key_status = f"{session_key[:16]}..." if session_key else "None"
+                        self._log(f"[RESUME-5] Session key: {key_status}")
+                    
+                    if session_key:
+                        # Try to load session from disk
+                        session_json = self.session_storage.load_session(session_key)
+                        
+                        if self.DEBUG_LOG:
+                            json_status = f"{len(session_json)} bytes" if session_json else "None (not found)"
+                            self._log(f"[RESUME-6] Session JSON: {json_status}")
+                        
+                        if session_json:
+                            # Resume existing session
+                            self._log(f"[RESUME-7] ✓ Found persisted session, importing...")
+                            
+                            session = self.session_manager.import_session(doc, session_json)
+                            
+                            if session:
+                                self._log(f"[RESUME-8] ✅ Session resumed: {session.id} (events: {session.event_count})")
+                                session_resumed = True
+                            else:
+                                self._log(f"[RESUME-8] ⚠️  Session import failed")
+                        else:
+                            if self.DEBUG_LOG:
+                                self._log(f"[RESUME-7] No persisted session found (first time opening this file)")
+                    else:
+                        self._log(f"[RESUME-5] ⚠️  Could not generate session key")
+                else:
+                    if self.DEBUG_LOG:
+                        self._log(f"[RESUME-4] Unsaved document, skipping resume")
+                
+            except Exception as e:
+                self._log(f"[RESUME-ERROR] ❌ Error during resumption: {e}")
+                import traceback
+                self._log(f"[RESUME-ERROR] Traceback: {traceback.format_exc()}")
+        else:
+            if self.DEBUG_LOG:
+                self._log(f"[RESUME-2] No SessionStorage, skipping resume")
+        
+        # Create new session if resume failed
+        if not session_resumed:
+            if self.DEBUG_LOG:
+                self._log(f"[RESUME-9] Creating NEW session for: {doc.name()}")
+            
+            try:
+                session = self.session_manager.create_session(doc)
+                
+                if self.DEBUG_LOG:
+                    self._log(f"[RESUME-10] ✓ Session created: {session.id}")
+                
+                # Set metadata
+                try:
+                    import platform
+                    session.set_metadata(
+                        document_name=doc.name(),
+                        canvas_width=doc.width(),
+                        canvas_height=doc.height(),
+                        krita_version=app.version(),
+                        os_info=f"{platform.system()} {platform.release()}"
+                    )
+                    if self.DEBUG_LOG:
+                        self._log(f"[RESUME-11] ✓ Metadata set")
+                except Exception as e:
+                    self._log(f"[RESUME-11] Error setting metadata: {e}")
+            except Exception as e:
+                self._log(f"[RESUME-10] ❌ ERROR creating session: {e}")
+                import traceback
+                self._log(f"[RESUME-10] Traceback: {traceback.format_exc()}")
+        
+        return session_resumed
     
     def _install_canvas_event_filter(self):
         """
@@ -513,102 +609,12 @@ class EventCapture:
         QTimer.singleShot(1000, lambda: self._delayed_canvas_retry(doc, "1000ms delay"))
         QTimer.singleShot(2000, lambda: self._delayed_canvas_retry(doc, "2000ms delay"))
         
-        # === SESSION RESUMPTION LOGIC (Task 1.15) ===
-        if self.DEBUG_LOG:
-            self._log(f"[RESUME-1] Checking if session exists for document: {doc.name()}")
-            self._log(f"[RESUME-1] has_session result: {self.session_manager.has_session(doc)}")
-        
+        # === SESSION RESUMPTION LOGIC (Task 1.15) - DRY ===
         if not self.session_manager.has_session(doc):
-            session_resumed = False
-            
-            # DIAGNOSTIC: Check session_storage availability
-            if self.DEBUG_LOG:
-                storage_status = "available" if self.session_storage else "None"
-                self._log(f"[RESUME-2] SessionStorage: {storage_status}")
-            
-            if self.session_storage:
-                try:
-                    filepath = doc.fileName()
-                    
-                    if self.DEBUG_LOG:
-                        filepath_status = filepath if filepath else "None (unsaved document)"
-                        self._log(f"[RESUME-3] Document filepath: {filepath_status}")
-                    
-                    if filepath:  # Existing file (not a new unsaved document)
-                        self._log(f"[RESUME-4] File opened: {filepath}")
-                        
-                        # Generate session key for this file
-                        session_key = self.session_storage.get_session_key_for_file(filepath)
-                        
-                        if self.DEBUG_LOG:
-                            key_status = f"{session_key[:16]}..." if session_key else "None (key generation failed)"
-                            self._log(f"[RESUME-5] Session key: {key_status}")
-                        
-                        if session_key:
-                            # Try to load session from disk
-                            session_json = self.session_storage.load_session(session_key)
-                            
-                            if self.DEBUG_LOG:
-                                json_status = f"{len(session_json)} bytes" if session_json else "None (not found)"
-                                self._log(f"[RESUME-6] Session JSON: {json_status}")
-                            
-                            if session_json:
-                                # Resume existing session
-                                self._log(f"[RESUME-7] ✓ Found persisted session, attempting to import...")
-                                
-                                session = self.session_manager.import_session(doc, session_json)
-                                
-                                if session:
-                                    self._log(f"[RESUME-8] ✅ Session resumed successfully: {session.id}")
-                                    session_resumed = True
-                                else:
-                                    self._log(f"[RESUME-8] ⚠️  Session import failed, creating new session")
-                            else:
-                                if self.DEBUG_LOG:
-                                    self._log(f"[RESUME-7] No persisted session found for this file")
-                        else:
-                            self._log(f"[RESUME-5] ⚠️  Could not generate session key")
-                    else:
-                        if self.DEBUG_LOG:
-                            self._log(f"[RESUME-4] New unsaved document, creating fresh session")
-                    
-                except Exception as e:
-                    self._log(f"[RESUME-ERROR] ❌ Error during session resumption: {e}")
-                    import traceback
-                    self._log(f"[RESUME-ERROR] Traceback: {traceback.format_exc()}")
-            
-            # Create new session if resume failed or no saved session exists
-            if not session_resumed:
-                if self.DEBUG_LOG:
-                    self._log(f"[RESUME-9] Creating NEW session for document: {doc.name()}")
-                
-                try:
-                    session = self.session_manager.create_session(doc)
-                    
-                    if self.DEBUG_LOG:
-                        self._log(f"[RESUME-10] ✓ Session created: {session.id}")
-                    
-                    # Set metadata
-                    try:
-                        import platform
-                        session.set_metadata(
-                            document_name=doc.name(),
-                            canvas_width=doc.width(),
-                            canvas_height=doc.height(),
-                            krita_version=app.version(),
-                            os_info=f"{platform.system()} {platform.release()}"
-                        )
-                        if self.DEBUG_LOG:
-                            self._log(f"[RESUME-11] ✓ Metadata set for session {session.id}")
-                    except Exception as e:
-                        self._log(f"[RESUME-11] Error setting metadata: {e}")
-                except Exception as e:
-                    self._log(f"[RESUME-10] ❌ CRITICAL ERROR creating session: {e}")
-                    import traceback
-                    self._log(f"[RESUME-10] Traceback: {traceback.format_exc()}")
+            self._try_resume_or_create_session(doc, "imageCreated signal")
         else:
             if self.DEBUG_LOG:
-                self._log(f"[RESUME-1] Session already exists in memory for document {doc.name()}")
+                self._log(f"[RESUME-1] Session already exists in memory for: {doc.name()}")
         
         # Connect signals for this document
         self.connect_document_signals(doc)
