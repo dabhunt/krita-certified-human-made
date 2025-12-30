@@ -751,6 +751,16 @@ class EventCapture:
         
         self._log(f"Document saved: {doc.name()}")
         
+        # CRITICAL BUG#002 FIX: Migrate session key if document was just saved for first time
+        # When a new unsaved document is saved, the key changes from "unsaved_ID" to filepath
+        # We need to migrate the session from old key to new key to prevent session loss
+        filepath = doc.fileName()
+        if filepath:
+            unsaved_key = f"unsaved_{id(doc)}"
+            if self.session_manager.migrate_session_key(unsaved_key, filepath):
+                if self.DEBUG_LOG:
+                    self._log(f"[SAVE-MIGRATE] ✅ Session migrated to filepath: {filepath}")
+        
         # Update session metadata with current document name
         session = self.session_manager.get_session(doc)
         if session:
@@ -768,6 +778,9 @@ class EventCapture:
                 
             except Exception as e:
                 self._log(f"Error updating metadata on save: {e}")
+        else:
+            if self.DEBUG_LOG:
+                self._log(f"[SAVE-ERROR] ⚠️ No session found for {doc.name()} after save (migration may have failed)")
     
     def on_view_created(self, view):
         """Handler for new view creation"""

@@ -159,6 +159,44 @@ class CHMSessionManager:
         doc_key = self._get_document_key(document)
         return doc_key in self.active_sessions
     
+    def migrate_session_key(self, old_key, new_key):
+        """
+        Migrate a session from one key to another.
+        
+        Used when document changes from unsaved to saved state.
+        This prevents session loss when a new document is saved for the first time.
+        
+        Args:
+            old_key: Current key (e.g., "unsaved_12345")
+            new_key: New key (e.g., "/path/to/file.kra")
+        
+        Returns:
+            bool: True if migration successful, False otherwise
+        """
+        if self.DEBUG_LOG:
+            self._log(f"[MIGRATE-1] Attempting migration: {old_key} → {new_key}")
+        
+        if old_key not in self.active_sessions:
+            if self.DEBUG_LOG:
+                self._log(f"[MIGRATE-2] ❌ No session under old key: {old_key}")
+            return False
+        
+        if new_key in self.active_sessions:
+            if self.DEBUG_LOG:
+                self._log(f"[MIGRATE-3] ⚠️ Session already exists under new key: {new_key}")
+            return False
+        
+        # Move session from old key to new key
+        session = self.active_sessions[old_key]
+        self.active_sessions[new_key] = session
+        del self.active_sessions[old_key]
+        
+        if self.DEBUG_LOG:
+            self._log(f"[MIGRATE-4] ✅ Session {session.id} migrated successfully")
+            self._log(f"[MIGRATE-5] Active sessions now: {list(self.active_sessions.keys())}")
+        
+        return True
+    
     def import_session(self, document, session_json):
         """
         Import session from JSON and associate with document.
