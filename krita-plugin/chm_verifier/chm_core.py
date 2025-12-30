@@ -75,10 +75,10 @@ class CHMFallback:
 
 class CHMSession:
     """
-    Pure Python implementation of CHM Session.
-    Captures drawing events and generates verification proofs.
+    CHM Session - tracks drawing events and generates verification proofs.
     
-    Compatible with Rust CHMSession interface.
+    Captures all creative actions (strokes, layers, imports) and builds
+    a timestamped proof of human-made artwork.
     """
     
     def __init__(self, document_id: Optional[str] = None):
@@ -95,7 +95,7 @@ class CHMSession:
         self.events = []
         self.metadata = {
             "platform": "macOS",
-            "implementation": "python-fallback"
+            "implementation": "python"
         }
         self.finalized = False
     
@@ -107,6 +107,15 @@ class CHMSession:
             **kwargs: Metadata key-value pairs
         """
         self.metadata.update(kwargs)
+    
+    def get_metadata(self):
+        """
+        Get session metadata (compatibility with Rust API).
+        
+        Returns:
+            dict: Session metadata
+        """
+        return self.metadata.copy()
         
     def record_stroke(
         self,
@@ -193,6 +202,23 @@ class CHMSession:
     def event_count(self) -> int:
         """Get number of recorded events (property for compatibility)"""
         return len(self.events)
+    
+    @property
+    def duration_secs(self) -> int:
+        """Get session duration in seconds (compatibility with Rust API)"""
+        duration = (datetime.utcnow() - self.start_time).total_seconds()
+        return int(duration)
+    
+    @property
+    def is_finalized(self) -> bool:
+        """Check if session is finalized (compatibility with Rust API)"""
+        return self.finalized
+    
+    @property
+    def public_key(self) -> str:
+        """Get public key (returns placeholder for MVP)"""
+        # Cryptographic signing will be added in future version
+        return "mvp-placeholder-key"
     
     def record_layer_added(
         self,
@@ -318,6 +344,27 @@ class CHMSession:
         sys.stdout.flush()
         
         return CHMProof(proof_data)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Serialize session to JSON-safe dictionary.
+        
+        Converts all properties to JSON-serializable types:
+        - datetime objects -> ISO format strings
+        - Ensures all values are JSON-safe primitives
+        
+        Returns:
+            Dict with JSON-safe session data
+        """
+        return {
+            'session_id': str(self.id),
+            'event_count': int(self.event_count),
+            'start_time': self.start_time.isoformat() + 'Z',  # ISO format with UTC marker
+            'duration_secs': int(self.duration_secs),
+            'is_finalized': bool(self.is_finalized),
+            'public_key': str(self.public_key),
+            'metadata': self.get_metadata()
+        }
     
     def _classify(self) -> str:
         """

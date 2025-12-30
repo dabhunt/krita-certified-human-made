@@ -1,18 +1,17 @@
 """
 CHM Library Loader
 
-Loads the CHM Python implementation.
+Loads the CHM Python implementation - the primary and only implementation.
 
-For MVP, we use pure Python implementation because:
-1. Works on all platforms (no code signing issues)
+Python implementation provides:
+1. Cross-platform compatibility (no code signing issues)
 2. Single codebase to maintain
-3. Sufficient performance for typical sessions
-4. No native library complexity
-
-Future: Consider Rust optimization if performance becomes an issue.
+3. Easy debugging and modification
+4. Sufficient performance for session tracking
+5. Direct integration with Krita's Python API
 """
 
-# Import the Python implementation
+# Import the CHM implementation
 from . import chm_core as chm
 
 CHM_AVAILABLE = True

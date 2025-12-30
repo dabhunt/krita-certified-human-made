@@ -167,61 +167,50 @@ class CHMSessionManager:
     
     def session_to_json(self, session):
         """
-        Serialize session to JSON string using available Python properties.
+        Serialize session to JSON string for persistence.
         
-        Workaround for missing to_json() in Rust binding.
-        Uses public properties (id, event_count, metadata, etc.)
+        Uses session.to_dict() method for clean separation of concerns.
+        Session class owns its data structure and serialization logic.
         
         Args:
-            session: CHMSession object
+            session: CHMSession object (must have to_dict() method)
             
         Returns:
-            str: JSON string representation
+            str: JSON string representation, or None if serialization fails
         """
-        self._log(f"[SERIALIZE-1] Starting serialization for session type: {type(session)}")
-        
         try:
-            # Build session data from available properties
-            self._log(f"[SERIALIZE-2] Getting session.id...")
-            session_id = session.id
-            self._log(f"[SERIALIZE-3] Got session.id: {session_id}")
-            
-            self._log(f"[SERIALIZE-4] Getting session.event_count...")
-            event_count = session.event_count
-            self._log(f"[SERIALIZE-5] Got event_count: {event_count}")
-            
-            self._log(f"[SERIALIZE-6] Getting session.start_time...")
-            start_time = session.start_time
-            self._log(f"[SERIALIZE-7] Got start_time: {start_time}")
-            
-            session_data = {
-                'session_id': session_id,
-                'event_count': event_count,
-                'start_time': start_time,
-                'duration_secs': session.duration_secs,
-                'is_finalized': session.is_finalized,
-                'public_key': session.public_key,
-            }
-            
-            self._log(f"[SERIALIZE-8] Basic data collected, getting metadata...")
-            
-            # Add metadata if available
-            try:
-                metadata = session.get_metadata()
-                if metadata:
-                    session_data['metadata'] = metadata
-                    self._log(f"[SERIALIZE-9] Metadata added: {metadata}")
-            except Exception as e:
-                self._log(f"[SERIALIZE-9] Warning: Could not get metadata: {e}")
+            # Use session's own serialization method (DRY principle)
+            session_data = session.to_dict()
             
             # Convert to JSON
-            self._log(f"[SERIALIZE-10] Converting to JSON...")
             session_json = json.dumps(session_data, indent=2)
             
-            self._log(f"[SERIALIZE-11] ✓ Session serialized: {len(session_json)} bytes")
+            self._log(f"[SERIALIZE] ✓ Session serialized: {len(session_json)} bytes")
             
             return session_json
             
+        except AttributeError as e:
+            # Session doesn't have to_dict() method - fall back to manual extraction
+            self._log(f"[SERIALIZE] Session missing to_dict(), using manual extraction: {e}")
+            try:
+                session_data = {
+                    'session_id': str(session.id),
+                    'event_count': int(session.event_count),
+                    'start_time': session.start_time.isoformat() + 'Z',
+                    'duration_secs': int(session.duration_secs),
+                    'is_finalized': bool(session.is_finalized),
+                    'public_key': str(session.public_key),
+                    'metadata': session.get_metadata() if hasattr(session, 'get_metadata') else {}
+                }
+                session_json = json.dumps(session_data, indent=2)
+                self._log(f"[SERIALIZE] ✓ Session serialized (fallback): {len(session_json)} bytes")
+                return session_json
+            except Exception as fallback_error:
+                self._log(f"[SERIALIZE-ERROR] Fallback also failed: {fallback_error}")
+                import traceback
+                self._log(f"[SERIALIZE-ERROR] Traceback: {traceback.format_exc()}")
+                return None
+                
         except Exception as e:
             self._log(f"[SERIALIZE-ERROR] ❌ Error serializing session: {e}")
             import traceback

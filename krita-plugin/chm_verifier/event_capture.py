@@ -392,7 +392,6 @@ class EventCapture:
                 return
             
             # Export session to JSON using session_manager helper
-            # (Rust binding doesn't expose to_json(), so we serialize using properties)
             if self.DEBUG_LOG:
                 self._log(f"[BUG#001-1] About to call session_manager.session_to_json()")
                 self._log(f"[BUG#001-2] session_manager type: {type(self.session_manager)}")
