@@ -375,10 +375,25 @@ class CHMExtension(Extension):
                     self._log(f"[C2PA-DEBUG-5] proof_dict size: {len(json.dumps(proof_dict))} bytes")
                     
                     # Generate C2PA manifest from proof
+                    # Use test certificates (self-signed for MVP)
+                    cert_path = os.path.join(os.path.dirname(__file__), 'certs', 'chm_cert.pem')
+                    key_path = os.path.join(os.path.dirname(__file__), 'certs', 'chm_signing_key.pem')
+                    
+                    # Check if test certs exist
+                    if not os.path.exists(cert_path) or not os.path.exists(key_path):
+                        self._log(f"[C2PA] ⚠️ Test certificates not found:")
+                        self._log(f"[C2PA]    Cert: {cert_path}")
+                        self._log(f"[C2PA]    Key: {key_path}")
+                        self._log("[C2PA] → Manifest will be unsigned")
+                        cert_path = None
+                        key_path = None
+                    else:
+                        self._log(f"[C2PA] ✅ Using test certificates for signing")
+                    
                     manifest = self.c2pa_builder.generate_manifest(
                         session_proof_json=json.dumps(proof_dict),
-                        cert_path=None,  # TODO: Get from settings
-                        key_path=None,   # TODO: Get from settings
+                        cert_path=cert_path,
+                        key_path=key_path,
                         privacy_mode="lite"  # Aggregate data only (privacy-preserving)
                     )
                     
@@ -399,7 +414,21 @@ class CHMExtension(Extension):
                         
                         if success:
                             self._log("[EXPORT] ✅ C2PA manifest embedded successfully")
-                            c2pa_status = "✓ C2PA embedded (unsigned)"
+                            # Check if manifest was signed
+                            if 'c2pa_signature' in manifest:
+                                sig_status = manifest['c2pa_signature'].get('status', 'unknown')
+                                if sig_status == 'unsigned':
+                                    c2pa_status = "✓ C2PA embedded (unsigned)"
+                                elif sig_status == 'signing_failed':
+                                    c2pa_status = "✓ C2PA embedded (signing failed)"
+                                elif 'algorithm' in manifest['c2pa_signature']:
+                                    # Successfully signed
+                                    algo = manifest['c2pa_signature'].get('algorithm', 'unknown')
+                                    c2pa_status = f"✓ C2PA embedded (signed: {algo})"
+                                else:
+                                    c2pa_status = "✓ C2PA embedded (unsigned)"
+                            else:
+                                c2pa_status = "✓ C2PA embedded (unsigned)"
                         else:
                             self._log("[EXPORT] ⚠️  C2PA embedding failed (returned False)")
                             c2pa_status = "⚠️  C2PA embedding failed"

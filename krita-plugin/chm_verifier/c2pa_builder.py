@@ -312,38 +312,100 @@ class CHMtoC2PABuilder:
         """
         Sign C2PA manifest with X.509 certificate.
         
-        Note: This requires c2pa-python to be available.
-        If not available, returns unsigned manifest.
+        This creates a simplified C2PA signature structure using:
+        - RSA-SHA256 for signing
+        - Base64 encoding for signature
+        - X.509 certificate chain
+        
+        Note: This is a simplified implementation for MVP.
+        Production should use full COSE (CBOR Object Signing) format.
         """
-        if not self.c2pa_available:
-            if self.DEBUG_LOG:
-                print("[C2PA] ⚠️ c2pa-python not available, cannot sign manifest")
-            return manifest
+        log_message("[C2PA-SIGN] Starting manifest signing...")
+        log_message(f"[C2PA-SIGN] Certificate: {cert_path}")
+        log_message(f"[C2PA-SIGN] Key: {key_path}")
         
         try:
-            # Read certificate and key
-            with open(cert_path, 'rb') as f:
-                cert_pem = f.read()
-            with open(key_path, 'rb') as f:
-                key_pem = f.read()
-            
-            # TODO: Implement actual signing with c2pa-python Builder
-            # This requires deeper integration with c2pa-python API
-            # For now, return unsigned manifest with note
-            
-            manifest['signing'] = {
-                'certificate': cert_path,
-                'status': 'unsigned (signing not yet implemented)'
-            }
-            
-            if self.DEBUG_LOG:
-                print("[C2PA] ⚠️ Manifest signing not yet implemented")
-            
-            return manifest
+            # Try to use cryptography library (may not be available in Krita)
+            try:
+                from cryptography import x509
+                from cryptography.hazmat.primitives import hashes, serialization
+                from cryptography.hazmat.primitives.asymmetric import padding
+                from cryptography.hazmat.backends import default_backend
+                import base64
+                
+                log_message("[C2PA-SIGN] ✅ cryptography library available")
+                
+                # Read certificate
+                with open(cert_path, 'rb') as f:
+                    cert_pem = f.read()
+                cert = x509.load_pem_x509_certificate(cert_pem, default_backend())
+                
+                # Read private key
+                with open(key_path, 'rb') as f:
+                    key_pem = f.read()
+                private_key = serialization.load_pem_private_key(
+                    key_pem, 
+                    password=None, 
+                    backend=default_backend()
+                )
+                
+                # Serialize manifest to canonical JSON (for signing)
+                manifest_json = json.dumps(manifest, sort_keys=True, separators=(',', ':'))
+                manifest_bytes = manifest_json.encode('utf-8')
+                
+                log_message(f"[C2PA-SIGN] Manifest size: {len(manifest_bytes)} bytes")
+                
+                # Sign manifest with RSA-SHA256
+                signature = private_key.sign(
+                    manifest_bytes,
+                    padding.PKCS1v15(),
+                    hashes.SHA256()
+                )
+                
+                log_message(f"[C2PA-SIGN] ✅ Signature generated: {len(signature)} bytes")
+                
+                # Add signing info to manifest
+                manifest['c2pa_signature'] = {
+                    'algorithm': 'RS256',  # RSA + SHA-256
+                    'signature': base64.b64encode(signature).decode('ascii'),
+                    'certificate': cert_pem.decode('ascii'),
+                    'issuer': cert.issuer.rfc4514_string(),
+                    'subject': cert.subject.rfc4514_string(),
+                    'valid_from': cert.not_valid_before_utc.isoformat(),
+                    'valid_until': cert.not_valid_after_utc.isoformat(),
+                    'signed_at': datetime.utcnow().isoformat() + 'Z'
+                }
+                
+                log_message("[C2PA-SIGN] ✅ Manifest signed successfully!")
+                log_message(f"[C2PA-SIGN] Certificate subject: {cert.subject.rfc4514_string()}")
+                log_message(f"[C2PA-SIGN] Certificate issuer: {cert.issuer.rfc4514_string()}")
+                
+                return manifest
+                
+            except ImportError as e:
+                # cryptography not available - fallback to unsigned with note
+                log_message(f"[C2PA-SIGN] ⚠️ cryptography library not available: {e}")
+                log_message("[C2PA-SIGN] → Manifest will be unsigned")
+                log_message("[C2PA-SIGN] → To enable signing, install: pip install cryptography")
+                
+                manifest['c2pa_signature'] = {
+                    'status': 'unsigned',
+                    'reason': 'cryptography library not available',
+                    'note': 'Install cryptography library to enable signing'
+                }
+                
+                return manifest
             
         except Exception as e:
-            if self.DEBUG_LOG:
-                print(f"[C2PA] ❌ Signing failed: {e}")
+            log_message(f"[C2PA-SIGN] ❌ Signing failed: {e}")
+            import traceback
+            log_message(f"[C2PA-SIGN] Traceback:\n{traceback.format_exc()}")
+            
+            manifest['c2pa_signature'] = {
+                'status': 'signing_failed',
+                'error': str(e)
+            }
+            
             return manifest
     
     def embed_in_image(
