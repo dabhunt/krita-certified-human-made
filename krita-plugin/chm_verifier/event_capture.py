@@ -145,8 +145,9 @@ class CanvasEventFilter(QObject):
 class EventCapture:
     """Captures and records Krita events to CHM sessions"""
     
-    def __init__(self, session_manager, debug_log=True):
+    def __init__(self, session_manager, session_storage=None, debug_log=True):
         self.session_manager = session_manager
+        self.session_storage = session_storage  # For persisting sessions
         self.DEBUG_LOG = debug_log
         self.connected_views = set()  # Track which views have signals connected
         self.connected_documents = set()  # Track which documents have signals
@@ -168,6 +169,9 @@ class EventCapture:
         # BFROS FIX: Track document content hash to detect ACTUAL changes
         # Since modified() is a boolean flag, we need to detect pixel changes
         self.doc_content_hash = {}  # doc_id -> str (hash of document content)
+        
+        # BFROS FIX: Initialize last stroke time tracking
+        self._last_stroke_time = {}  # doc_id -> timestamp (for future features)
         
         # BFROS: Track additional metrics to detect ongoing activity
         self.doc_undo_count = {}  # doc_id -> int (undo stack count)
@@ -479,7 +483,7 @@ class EventCapture:
             self._log(f"[ROAA] ✓ View {view_id} configured (using: {method_used})")
     
     def on_image_created(self):
-        """Handler for new document creation"""
+        """Handler for new document creation or file open - tries to resume session"""
         if self.DEBUG_LOG:
             self._log("[BFROS] ===== on_image_created SIGNAL FIRED =====")
         
@@ -509,42 +513,102 @@ class EventCapture:
         QTimer.singleShot(1000, lambda: self._delayed_canvas_retry(doc, "1000ms delay"))
         QTimer.singleShot(2000, lambda: self._delayed_canvas_retry(doc, "2000ms delay"))
         
-        # Create CHM session for new document
+        # === SESSION RESUMPTION LOGIC (Task 1.15) ===
         if self.DEBUG_LOG:
-            self._log(f"[BFROS-CREATE] Checking if session exists for new document...")
-            self._log(f"[BFROS-CREATE] has_session result: {self.session_manager.has_session(doc)}")
+            self._log(f"[RESUME-1] Checking if session exists for document: {doc.name()}")
+            self._log(f"[RESUME-1] has_session result: {self.session_manager.has_session(doc)}")
         
         if not self.session_manager.has_session(doc):
-            if self.DEBUG_LOG:
-                self._log(f"[BFROS-CREATE] Creating NEW session for document: {doc.name()}")
+            session_resumed = False
             
-            try:
-                session = self.session_manager.create_session(doc)
-                
-                if self.DEBUG_LOG:
-                    self._log(f"[BFROS-CREATE] ✓ Session created: {session.id}")
-                
-                # Set metadata
+            # DIAGNOSTIC: Check session_storage availability
+            if self.DEBUG_LOG:
+                storage_status = "available" if self.session_storage else "None"
+                self._log(f"[RESUME-2] SessionStorage: {storage_status}")
+            
+            if self.session_storage:
                 try:
-                    import platform
-                    session.set_metadata(
-                        document_name=doc.name(),
-                        canvas_width=doc.width(),
-                        canvas_height=doc.height(),
-                        krita_version=app.version(),
-                        os_info=f"{platform.system()} {platform.release()}"
-                    )
+                    filepath = doc.fileName()
+                    
                     if self.DEBUG_LOG:
-                        self._log(f"[BFROS-CREATE] ✓ Metadata set for session {session.id}")
+                        filepath_status = filepath if filepath else "None (unsaved document)"
+                        self._log(f"[RESUME-3] Document filepath: {filepath_status}")
+                    
+                    if filepath:  # Existing file (not a new unsaved document)
+                        self._log(f"[RESUME-4] File opened: {filepath}")
+                        
+                        # Generate session key for this file
+                        session_key = self.session_storage.get_session_key_for_file(filepath)
+                        
+                        if self.DEBUG_LOG:
+                            key_status = f"{session_key[:16]}..." if session_key else "None (key generation failed)"
+                            self._log(f"[RESUME-5] Session key: {key_status}")
+                        
+                        if session_key:
+                            # Try to load session from disk
+                            session_json = self.session_storage.load_session(session_key)
+                            
+                            if self.DEBUG_LOG:
+                                json_status = f"{len(session_json)} bytes" if session_json else "None (not found)"
+                                self._log(f"[RESUME-6] Session JSON: {json_status}")
+                            
+                            if session_json:
+                                # Resume existing session
+                                self._log(f"[RESUME-7] ✓ Found persisted session, attempting to import...")
+                                
+                                session = self.session_manager.import_session(doc, session_json)
+                                
+                                if session:
+                                    self._log(f"[RESUME-8] ✅ Session resumed successfully: {session.id}")
+                                    session_resumed = True
+                                else:
+                                    self._log(f"[RESUME-8] ⚠️  Session import failed, creating new session")
+                            else:
+                                if self.DEBUG_LOG:
+                                    self._log(f"[RESUME-7] No persisted session found for this file")
+                        else:
+                            self._log(f"[RESUME-5] ⚠️  Could not generate session key")
+                    else:
+                        if self.DEBUG_LOG:
+                            self._log(f"[RESUME-4] New unsaved document, creating fresh session")
+                    
                 except Exception as e:
-                    self._log(f"[BFROS-CREATE] Error setting metadata: {e}")
-            except Exception as e:
-                self._log(f"[BFROS-CREATE] ❌ CRITICAL ERROR creating session: {e}")
-                import traceback
-                self._log(f"[BFROS-CREATE] Traceback: {traceback.format_exc()}")
+                    self._log(f"[RESUME-ERROR] ❌ Error during session resumption: {e}")
+                    import traceback
+                    self._log(f"[RESUME-ERROR] Traceback: {traceback.format_exc()}")
+            
+            # Create new session if resume failed or no saved session exists
+            if not session_resumed:
+                if self.DEBUG_LOG:
+                    self._log(f"[RESUME-9] Creating NEW session for document: {doc.name()}")
+                
+                try:
+                    session = self.session_manager.create_session(doc)
+                    
+                    if self.DEBUG_LOG:
+                        self._log(f"[RESUME-10] ✓ Session created: {session.id}")
+                    
+                    # Set metadata
+                    try:
+                        import platform
+                        session.set_metadata(
+                            document_name=doc.name(),
+                            canvas_width=doc.width(),
+                            canvas_height=doc.height(),
+                            krita_version=app.version(),
+                            os_info=f"{platform.system()} {platform.release()}"
+                        )
+                        if self.DEBUG_LOG:
+                            self._log(f"[RESUME-11] ✓ Metadata set for session {session.id}")
+                    except Exception as e:
+                        self._log(f"[RESUME-11] Error setting metadata: {e}")
+                except Exception as e:
+                    self._log(f"[RESUME-10] ❌ CRITICAL ERROR creating session: {e}")
+                    import traceback
+                    self._log(f"[RESUME-10] Traceback: {traceback.format_exc()}")
         else:
             if self.DEBUG_LOG:
-                self._log(f"[BFROS-CREATE] Session already exists for document {doc.name()}")
+                self._log(f"[RESUME-1] Session already exists in memory for document {doc.name()}")
         
         # Connect signals for this document
         self.connect_document_signals(doc)
