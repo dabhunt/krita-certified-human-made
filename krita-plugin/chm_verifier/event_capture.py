@@ -355,6 +355,63 @@ class EventCapture:
         
         return session_resumed
     
+    def _persist_session(self, doc, session, context="unknown"):
+        """
+        Persist session to disk.
+        
+        DRY helper called when session should be saved:
+        - on_image_saved() - when user saves file (Ctrl+S)
+        - on_image_closed() - when user closes file
+        
+        Args:
+            doc: Krita document
+            session: CHMSession to persist
+            context: Description of when this is called (for logging)
+        """
+        if not self.session_storage:
+            if self.DEBUG_LOG:
+                self._log(f"[PERSIST-{context}] No SessionStorage available, skipping")
+            return
+        
+        try:
+            filepath = doc.fileName()
+            
+            if not filepath:
+                if self.DEBUG_LOG:
+                    self._log(f"[PERSIST-{context}] ⚠️  Document has no filepath (unsaved), skipping")
+                return
+            
+            if self.DEBUG_LOG:
+                self._log(f"[PERSIST-{context}] Persisting session for: {doc.name()}")
+            
+            # Generate session key for this file
+            session_key = self.session_storage.get_session_key_for_file(filepath)
+            
+            if not session_key:
+                self._log(f"[PERSIST-{context}] ❌ Could not generate session key")
+                return
+            
+            # Export session to JSON
+            session_json = session.to_json()
+            
+            if self.DEBUG_LOG:
+                json_size = len(session_json) if session_json else 0
+                self._log(f"[PERSIST-{context}] Session JSON: {json_size} bytes")
+            
+            # Save to disk using session key as filename
+            success = self.session_storage.save_session(session_key, session_json)
+            
+            if success:
+                if self.DEBUG_LOG:
+                    self._log(f"[PERSIST-{context}] ✅ Session persisted: {session.id} (events: {session.event_count})")
+            else:
+                self._log(f"[PERSIST-{context}] ❌ Failed to persist session")
+                
+        except Exception as e:
+            self._log(f"[PERSIST-{context}] ❌ Error persisting session: {e}")
+            import traceback
+            self._log(f"[PERSIST-{context}] Traceback: {traceback.format_exc()}")
+    
     def _install_canvas_event_filter(self):
         """
         Install event filter on canvas widget for direct stroke detection.
@@ -623,8 +680,20 @@ class EventCapture:
         """Handler for document close"""
         if self.DEBUG_LOG:
             self._log("[BFROS] ===== on_image_closed SIGNAL FIRED =====")
-        # Note: The document is already closed at this point
-        # Session cleanup happens when user explicitly finalizes
+        
+        # CRITICAL: Persist session before document is gone
+        # Note: We need to get the document reference from active documents
+        # before it's fully closed
+        app = Krita.instance()
+        
+        # Try to find the document that's being closed
+        # This is tricky because the signal doesn't pass the doc reference
+        # and activeDocument() might already be None
+        for doc in app.documents():
+            session = self.session_manager.get_session(doc)
+            if session:
+                self._persist_session(doc, session, "on_close")
+        
         self._log("Document closed event received")
     
     def on_image_saved(self):
@@ -651,6 +720,10 @@ class EventCapture:
                     krita_version=None,  # Keep existing
                     os_info=None  # Keep existing
                 )
+                
+                # CRITICAL: Persist session to disk when file is saved
+                self._persist_session(doc, session, "on_save")
+                
             except Exception as e:
                 self._log(f"Error updating metadata on save: {e}")
     
