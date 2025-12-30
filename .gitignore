@@ -31,6 +31,9 @@ ENV/
 *~
 .DS_Store
 
+# Cursor IDE - ignore internal files
+.cursor/
+
 # Krita
 *.kra~
 *.kra-autosave.kra
