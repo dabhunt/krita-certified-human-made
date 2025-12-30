@@ -74,13 +74,18 @@ class CHMExtension(Extension):
         
         # Initialize session storage (Task 1.15.1)
         self.session_storage = SessionStorage(debug_log=self.DEBUG_LOG)
+        if self.DEBUG_LOG:
+            print(f"[CHM-INIT] SessionStorage initialized: {self.session_storage}")
         
         # Initialize session manager and event capture
         self.session_manager = CHMSessionManager(debug_log=self.DEBUG_LOG)
         self.event_capture = EventCapture(
             self.session_manager,
+            session_storage=self.session_storage,  # CRITICAL: Pass session_storage for persistence!
             debug_log=self.DEBUG_LOG
         )
+        if self.DEBUG_LOG:
+            print(f"[CHM-INIT] EventCapture initialized with session_storage: {self.event_capture.session_storage}")
         
         # Initialize API client (Task 1.12)
         self.api_client = CHMApiClient(debug_log=self.DEBUG_LOG)
