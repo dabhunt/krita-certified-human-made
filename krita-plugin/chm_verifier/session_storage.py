@@ -240,8 +240,12 @@ class SessionStorage:
         """
         Generate session key for a file (ROAA Approach 2: hash-based lookup).
         
-        Uses hash of filepath + file creation time as stable key.
+        Uses hash of filepath + inode number as stable key.
         This allows resuming sessions without modifying the .kra file.
+        
+        CRITICAL FIX: Previously used st_ctime (change time), which updates on
+        every save, causing session key to change. Now uses st_ino (inode),
+        which is stable for the lifetime of the file on the same filesystem.
         
         Args:
             filepath: Full path to .kra file
@@ -256,13 +260,14 @@ class SessionStorage:
             # Get file stats
             stat = os.stat(filepath)
             
-            # Create stable key from path + creation time
-            # This remains constant unless file is moved or copied
-            key_data = f"{filepath}:{stat.st_ctime}"
+            # Create stable key from path + inode number
+            # Inode is stable unless file is moved/copied to different filesystem
+            # This prevents session key from changing on every save (unlike st_ctime)
+            key_data = f"{filepath}:{stat.st_ino}"
             session_key = hashlib.sha256(key_data.encode()).hexdigest()
             
             if self.DEBUG_LOG:
-                self._log(f"[SESSION-KEY] Generated for {os.path.basename(filepath)}: {session_key[:16]}...")
+                self._log(f"[SESSION-KEY] Generated for {os.path.basename(filepath)}: {session_key[:16]}... (inode: {stat.st_ino})")
             
             return session_key
             
