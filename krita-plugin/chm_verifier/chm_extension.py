@@ -375,9 +375,9 @@ class CHMExtension(Extension):
                     self._log(f"[C2PA-DEBUG-5] proof_dict size: {len(json.dumps(proof_dict))} bytes")
                     
                     # Generate C2PA manifest from proof
-                    # Use test certificates (self-signed for MVP)
-                    cert_path = os.path.join(os.path.dirname(__file__), 'certs', 'chm_cert.pem')
-                    key_path = os.path.join(os.path.dirname(__file__), 'certs', 'chm_signing_key.pem')
+                    # Use ED25519 test certificates (self-signed for MVP)
+                    cert_path = os.path.join(os.path.dirname(__file__), 'certs', 'chm_ed25519_cert.pem')
+                    key_path = os.path.join(os.path.dirname(__file__), 'certs', 'chm_ed25519_key.pem')
                     
                     # Check if test certs exist
                     if not os.path.exists(cert_path) or not os.path.exists(key_path):

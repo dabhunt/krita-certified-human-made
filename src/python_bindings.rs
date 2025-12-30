@@ -297,19 +297,42 @@
      crate::crypto::sha256_hash(data)
  }
  
- /// Compute SHA-256 hash of a file
- /// 
- /// Args:
- ///     path (str): Path to the file
- /// 
- /// Returns:
- ///     str: Hex-encoded SHA-256 hash
- #[pyfunction]
- fn sha256_file(path: String) -> PyResult<String> {
-     use std::path::Path;
-     crate::crypto::sha256_file(Path::new(&path))
-         .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
- }
+/// Compute SHA-256 hash of a file
+/// 
+/// Args:
+///     path (str): Path to the file
+/// 
+/// Returns:
+///     str: Hex-encoded SHA-256 hash
+#[pyfunction]
+fn sha256_file(path: String) -> PyResult<String> {
+    use std::path::Path;
+    crate::crypto::sha256_file(Path::new(&path))
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+}
+
+/// Sign data using ED25519
+/// 
+/// Args:
+///     data (bytes): Data to sign
+///     secret_key_bytes (bytes): ED25519 secret key (32 bytes)
+/// 
+/// Returns:
+///     bytes: ED25519 signature (64 bytes)
+#[pyfunction]
+fn sign_bytes(data: Vec<u8>, secret_key_bytes: Vec<u8>) -> PyResult<Vec<u8>> {
+    use crate::crypto::SigningKey;
+    
+    // Create SigningKey from raw bytes
+    let signing_key = SigningKey::from_bytes(&secret_key_bytes)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ED25519 key: {}", e)))?;
+    
+    // Sign the data
+    let signature = signing_key.sign(&data)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Signing failed: {}", e)))?;
+    
+    Ok(signature)
+}
  
  /// Python module definition
  /// 
@@ -320,12 +343,13 @@
      // Register the main session class
      m.add_class::<PySession>()?;
      
-     // Register utility functions
-     m.add_function(wrap_pyfunction!(hello_from_rust, m)?)?;
-     m.add_function(wrap_pyfunction!(get_version, m)?)?;
-     m.add_function(wrap_pyfunction!(test_data_types, m)?)?;
-     m.add_function(wrap_pyfunction!(sha256, m)?)?;
-     m.add_function(wrap_pyfunction!(sha256_file, m)?)?;
+    // Register utility functions
+    m.add_function(wrap_pyfunction!(hello_from_rust, m)?)?;
+    m.add_function(wrap_pyfunction!(get_version, m)?)?;
+    m.add_function(wrap_pyfunction!(test_data_types, m)?)?;
+    m.add_function(wrap_pyfunction!(sha256, m)?)?;
+    m.add_function(wrap_pyfunction!(sha256_file, m)?)?;
+    m.add_function(wrap_pyfunction!(sign_bytes, m)?)?;
      
      // Add module metadata
      m.add("__version__", env!("CARGO_PKG_VERSION"))?;

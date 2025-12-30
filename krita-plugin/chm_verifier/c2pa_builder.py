@@ -310,91 +310,70 @@ class CHMtoC2PABuilder:
         key_path: str
     ) -> Dict[str, Any]:
         """
-        Sign C2PA manifest with X.509 certificate.
+        Sign C2PA manifest using ED25519 (via Rust).
         
-        This creates a simplified C2PA signature structure using:
-        - RSA-SHA256 for signing
-        - Base64 encoding for signature
-        - X.509 certificate chain
+        This uses our existing Rust ED25519 signing infrastructure - no Python
+        cryptography dependencies required! Works in any environment (Krita, AppImage, etc.)
         
-        Note: This is a simplified implementation for MVP.
-        Production should use full COSE (CBOR Object Signing) format.
+        Args:
+            manifest: C2PA manifest dict
+            cert_path: Path to X.509 certificate (ED25519 or RSA)
+            key_path: Path to private key (ED25519 PEM format)
+            
+        Returns:
+            Manifest with c2pa_signature added
         """
         log_message("[C2PA-SIGN] Starting manifest signing...")
         log_message(f"[C2PA-SIGN] Certificate: {cert_path}")
         log_message(f"[C2PA-SIGN] Key: {key_path}")
         
         try:
-            # Try to use cryptography library (may not be available in Krita)
-            try:
-                from cryptography import x509
-                from cryptography.hazmat.primitives import hashes, serialization
-                from cryptography.hazmat.primitives.asymmetric import padding
-                from cryptography.hazmat.backends import default_backend
-                import base64
-                
-                log_message("[C2PA-SIGN] ✅ cryptography library available")
-                
-                # Read certificate
-                with open(cert_path, 'rb') as f:
-                    cert_pem = f.read()
-                cert = x509.load_pem_x509_certificate(cert_pem, default_backend())
-                
-                # Read private key
-                with open(key_path, 'rb') as f:
-                    key_pem = f.read()
-                private_key = serialization.load_pem_private_key(
-                    key_pem, 
-                    password=None, 
-                    backend=default_backend()
-                )
-                
-                # Serialize manifest to canonical JSON (for signing)
-                manifest_json = json.dumps(manifest, sort_keys=True, separators=(',', ':'))
-                manifest_bytes = manifest_json.encode('utf-8')
-                
-                log_message(f"[C2PA-SIGN] Manifest size: {len(manifest_bytes)} bytes")
-                
-                # Sign manifest with RSA-SHA256
-                signature = private_key.sign(
-                    manifest_bytes,
-                    padding.PKCS1v15(),
-                    hashes.SHA256()
-                )
-                
-                log_message(f"[C2PA-SIGN] ✅ Signature generated: {len(signature)} bytes")
-                
-                # Add signing info to manifest
-                manifest['c2pa_signature'] = {
-                    'algorithm': 'RS256',  # RSA + SHA-256
-                    'signature': base64.b64encode(signature).decode('ascii'),
-                    'certificate': cert_pem.decode('ascii'),
-                    'issuer': cert.issuer.rfc4514_string(),
-                    'subject': cert.subject.rfc4514_string(),
-                    'valid_from': cert.not_valid_before_utc.isoformat(),
-                    'valid_until': cert.not_valid_after_utc.isoformat(),
-                    'signed_at': datetime.utcnow().isoformat() + 'Z'
-                }
-                
-                log_message("[C2PA-SIGN] ✅ Manifest signed successfully!")
-                log_message(f"[C2PA-SIGN] Certificate subject: {cert.subject.rfc4514_string()}")
-                log_message(f"[C2PA-SIGN] Certificate issuer: {cert.issuer.rfc4514_string()}")
-                
-                return manifest
-                
-            except ImportError as e:
-                # cryptography not available - fallback to unsigned with note
-                log_message(f"[C2PA-SIGN] ⚠️ cryptography library not available: {e}")
-                log_message("[C2PA-SIGN] → Manifest will be unsigned")
-                log_message("[C2PA-SIGN] → To enable signing, install: pip install cryptography")
-                
-                manifest['c2pa_signature'] = {
-                    'status': 'unsigned',
-                    'reason': 'cryptography library not available',
-                    'note': 'Install cryptography library to enable signing'
-                }
-                
-                return manifest
+            # Import our Rust library
+            from .lib import chm
+            import base64
+            
+            log_message("[C2PA-SIGN] ✅ Using Rust ED25519 signing (no Python dependencies!)")
+            
+            # Read certificate
+            with open(cert_path, 'rb') as f:
+                cert_pem = f.read().decode('utf-8')
+            
+            # Read ED25519 private key (PEM format)
+            with open(key_path, 'rb') as f:
+                key_pem = f.read().decode('utf-8')
+            
+            # Extract raw ED25519 key bytes from PEM
+            # ED25519 keys are 32 bytes, base64-encoded in PEM
+            key_bytes = self._parse_ed25519_pem(key_pem)
+            
+            if not key_bytes:
+                raise ValueError("Failed to parse ED25519 key from PEM")
+            
+            log_message(f"[C2PA-SIGN] ✅ ED25519 key parsed: {len(key_bytes)} bytes")
+            
+            # Serialize manifest to canonical JSON (for signing)
+            manifest_json = json.dumps(manifest, sort_keys=True, separators=(',', ':'))
+            manifest_bytes = manifest_json.encode('utf-8')
+            
+            log_message(f"[C2PA-SIGN] Manifest size: {len(manifest_bytes)} bytes")
+            
+            # Sign with Rust ED25519
+            signature_bytes = chm.sign_bytes(manifest_bytes, key_bytes)
+            
+            log_message(f"[C2PA-SIGN] ✅ Signature generated: {len(signature_bytes)} bytes")
+            
+            # Add signing info to manifest
+            manifest['c2pa_signature'] = {
+                'algorithm': 'EdDSA',  # ED25519
+                'signature': base64.b64encode(signature_bytes).decode('ascii'),
+                'certificate': cert_pem,
+                'signed_at': datetime.utcnow().isoformat() + 'Z'
+            }
+            
+            log_message("[C2PA-SIGN] ✅ Manifest signed successfully with ED25519!")
+            log_message("[C2PA-SIGN] ✅ Used Rust signing (no Python cryptography needed)")
+            
+            return manifest
             
         except Exception as e:
             log_message(f"[C2PA-SIGN] ❌ Signing failed: {e}")
@@ -407,6 +386,43 @@ class CHMtoC2PABuilder:
             }
             
             return manifest
+    
+    def _parse_ed25519_pem(self, pem_data: str) -> bytes:
+        """
+        Parse ED25519 private key from PEM format.
+        
+        ED25519 keys are 32 bytes, encoded in PEM as:
+        -----BEGIN PRIVATE KEY-----
+        BASE64_ENCODED_ASN1_DER
+        -----END PRIVATE KEY-----
+        
+        The DER structure is: SEQUENCE { version, algorithm, OCTET STRING (32-byte key) }
+        We extract the last 32 bytes.
+        """
+        import base64
+        
+        try:
+            # Remove PEM headers/footers
+            lines = pem_data.strip().split('\n')
+            b64_data = ''.join([line for line in lines if not line.startswith('-----')])
+            
+            # Decode base64
+            der_bytes = base64.b64decode(b64_data)
+            
+            # ED25519 key is the last 32 bytes of the DER structure
+            # (OpenSSL ED25519 PEM format stores 32-byte key at end)
+            if len(der_bytes) < 32:
+                raise ValueError(f"DER too short: {len(der_bytes)} bytes")
+            
+            key_bytes = der_bytes[-32:]  # Extract last 32 bytes
+            
+            log_message(f"[C2PA-SIGN] Extracted ED25519 key: {len(key_bytes)} bytes from {len(der_bytes)} DER bytes")
+            
+            return key_bytes
+            
+        except Exception as e:
+            log_message(f"[C2PA-SIGN] ❌ Failed to parse ED25519 PEM: {e}")
+            return None
     
     def embed_in_image(
         self,
