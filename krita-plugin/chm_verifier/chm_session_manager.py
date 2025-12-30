@@ -178,37 +178,54 @@ class CHMSessionManager:
         Returns:
             str: JSON string representation
         """
+        self._log(f"[SERIALIZE-1] Starting serialization for session type: {type(session)}")
+        
         try:
             # Build session data from available properties
+            self._log(f"[SERIALIZE-2] Getting session.id...")
+            session_id = session.id
+            self._log(f"[SERIALIZE-3] Got session.id: {session_id}")
+            
+            self._log(f"[SERIALIZE-4] Getting session.event_count...")
+            event_count = session.event_count
+            self._log(f"[SERIALIZE-5] Got event_count: {event_count}")
+            
+            self._log(f"[SERIALIZE-6] Getting session.start_time...")
+            start_time = session.start_time
+            self._log(f"[SERIALIZE-7] Got start_time: {start_time}")
+            
             session_data = {
-                'session_id': session.id,
-                'event_count': session.event_count,
-                'start_time': session.start_time,
+                'session_id': session_id,
+                'event_count': event_count,
+                'start_time': start_time,
                 'duration_secs': session.duration_secs,
                 'is_finalized': session.is_finalized,
                 'public_key': session.public_key,
             }
+            
+            self._log(f"[SERIALIZE-8] Basic data collected, getting metadata...")
             
             # Add metadata if available
             try:
                 metadata = session.get_metadata()
                 if metadata:
                     session_data['metadata'] = metadata
+                    self._log(f"[SERIALIZE-9] Metadata added: {metadata}")
             except Exception as e:
-                self._log(f"[SERIALIZE] Warning: Could not get metadata: {e}")
+                self._log(f"[SERIALIZE-9] Warning: Could not get metadata: {e}")
             
             # Convert to JSON
+            self._log(f"[SERIALIZE-10] Converting to JSON...")
             session_json = json.dumps(session_data, indent=2)
             
-            if self.DEBUG_LOG:
-                self._log(f"[SERIALIZE] ✓ Session serialized: {len(session_json)} bytes")
+            self._log(f"[SERIALIZE-11] ✓ Session serialized: {len(session_json)} bytes")
             
             return session_json
             
         except Exception as e:
-            self._log(f"[SERIALIZE] ❌ Error serializing session: {e}")
+            self._log(f"[SERIALIZE-ERROR] ❌ Error serializing session: {e}")
             import traceback
-            self._log(f"[SERIALIZE] Traceback: {traceback.format_exc()}")
+            self._log(f"[SERIALIZE-ERROR] Traceback: {traceback.format_exc()}")
             return None
     
     def _log(self, message):
