@@ -176,6 +176,11 @@ class EventCapture:
         # BFROS: Track additional metrics to detect ongoing activity
         self.doc_undo_count = {}  # doc_id -> int (undo stack count)
         
+        # AFK Detection: Track polls without content changes
+        # After 2 polls (10 seconds) without changes, stop recording duration
+        self.polls_without_change = {}  # doc_id -> int (consecutive polls with no change)
+        self.AFK_POLL_THRESHOLD = 2  # 2 polls × 5s = 10 seconds idle before AFK
+        
     def start_capture(self):
         """Start capturing events globally"""
         app = Krita.instance()
@@ -1066,15 +1071,21 @@ class EventCapture:
                         
                         # Detect ACTUAL change in content
                         if previous_hash != thumbnail_hash:
+                            # Content changed - reset AFK counter and record stroke
+                            self.polls_without_change[doc_id] = 0
                             should_record = True
                             self.doc_content_hash[doc_id] = thumbnail_hash
                             
                             if self.DEBUG_LOG:
                                 self._log(f"[BFROS-STROKE] ✓ Content CHANGED! New stroke detected (hash changed)")
                         else:
-                            # Content unchanged - user is idle
+                            # Content unchanged - increment AFK counter
+                            self.polls_without_change[doc_id] = self.polls_without_change.get(doc_id, 0) + 1
+                            
                             if self.DEBUG_LOG and self._mod_poll_count % 40 == 0:
-                                self._log(f"[BFROS-STROKE] Content unchanged (hash identical, no new strokes)")
+                                idle_polls = self.polls_without_change[doc_id]
+                                idle_secs = idle_polls * 5  # 5 seconds per poll
+                                self._log(f"[BFROS-STROKE] Content unchanged (hash identical, idle for {idle_polls} polls = {idle_secs}s)")
                     
                 except Exception as e:
                     # Fallback: If thumbnail fails, use transition detection only
@@ -1094,6 +1105,16 @@ class EventCapture:
             if should_record:
                 import time
                 current_time = time.time()  # BFROS FIX: Define current_time before use
+                
+                # Check if user was AFK and is now resuming
+                idle_polls = self.polls_without_change.get(doc_id, 0)
+                was_afk = idle_polls >= self.AFK_POLL_THRESHOLD
+                
+                if was_afk:
+                    # User was AFK, now resuming - log the resumption
+                    idle_secs = idle_polls * 5
+                    if self.DEBUG_LOG:
+                        self._log(f"[AFK] ▶️  User resumed after {idle_polls} polls ({idle_secs}s) AFK - duration will resume incrementing")
                 
                 session = self.session_manager.get_session(doc)
                 
