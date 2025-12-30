@@ -391,11 +391,16 @@ class EventCapture:
                 self._log(f"[PERSIST-{context}] ❌ Could not generate session key")
                 return
             
-            # Export session to JSON
-            session_json = session.to_json()
+            # Export session to JSON using session_manager helper
+            # (Rust binding doesn't expose to_json(), so we serialize using properties)
+            session_json = self.session_manager.session_to_json(session)
+            
+            if not session_json:
+                self._log(f"[PERSIST-{context}] ❌ Failed to serialize session")
+                return
             
             if self.DEBUG_LOG:
-                json_size = len(session_json) if session_json else 0
+                json_size = len(session_json)
                 self._log(f"[PERSIST-{context}] Session JSON: {json_size} bytes")
             
             # Save to disk using session key as filename

@@ -165,6 +165,52 @@ class CHMSessionManager:
             self._log(f"[PERSIST] Traceback: {traceback.format_exc()}")
             return None
     
+    def session_to_json(self, session):
+        """
+        Serialize session to JSON string using available Python properties.
+        
+        Workaround for missing to_json() in Rust binding.
+        Uses public properties (id, event_count, metadata, etc.)
+        
+        Args:
+            session: CHMSession object
+            
+        Returns:
+            str: JSON string representation
+        """
+        try:
+            # Build session data from available properties
+            session_data = {
+                'session_id': session.id,
+                'event_count': session.event_count,
+                'start_time': session.start_time,
+                'duration_secs': session.duration_secs,
+                'is_finalized': session.is_finalized,
+                'public_key': session.public_key,
+            }
+            
+            # Add metadata if available
+            try:
+                metadata = session.get_metadata()
+                if metadata:
+                    session_data['metadata'] = metadata
+            except Exception as e:
+                self._log(f"[SERIALIZE] Warning: Could not get metadata: {e}")
+            
+            # Convert to JSON
+            session_json = json.dumps(session_data, indent=2)
+            
+            if self.DEBUG_LOG:
+                self._log(f"[SERIALIZE] ✓ Session serialized: {len(session_json)} bytes")
+            
+            return session_json
+            
+        except Exception as e:
+            self._log(f"[SERIALIZE] ❌ Error serializing session: {e}")
+            import traceback
+            self._log(f"[SERIALIZE] Traceback: {traceback.format_exc()}")
+            return None
+    
     def _log(self, message):
         """Debug logging helper"""
         if self.DEBUG_LOG:
