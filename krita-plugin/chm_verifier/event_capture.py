@@ -257,71 +257,86 @@ class EventCapture:
             context: Description of when this is called (for logging)
         """
         from krita import Krita
+        import os
         app = Krita.instance()
         
         session_resumed = False
         
-        if self.DEBUG_LOG:
-            self._log(f"[RESUME-1] {context}: Trying to resume session for {doc.name()}")
+        self._log(f"[RESUME-1] ========== RESUME/CREATE SESSION ({context}) ==========")
+        self._log(f"[RESUME-1a] Document: {doc.name()}")
         
         # Check session_storage availability
-        if self.DEBUG_LOG:
-            storage_status = "available" if self.session_storage else "None"
-            self._log(f"[RESUME-2] SessionStorage: {storage_status}")
+        storage_status = "available" if self.session_storage else "None"
+        self._log(f"[RESUME-2] SessionStorage: {storage_status}")
         
         if self.session_storage:
             try:
                 filepath = doc.fileName()
                 
-                if self.DEBUG_LOG:
-                    filepath_status = filepath if filepath else "None (unsaved document)"
-                    self._log(f"[RESUME-3] Document filepath: {filepath_status}")
+                filepath_status = filepath if filepath else "None (unsaved document)"
+                self._log(f"[RESUME-3] Document filepath: {filepath_status}")
                 
                 if filepath:  # Existing file (not a new unsaved document)
-                    self._log(f"[RESUME-4] File has path: {filepath}")
+                    # Check if file exists on disk
+                    file_exists = os.path.exists(filepath)
+                    self._log(f"[RESUME-4] File exists on disk: {file_exists}")
+                    
+                    if not file_exists:
+                        self._log(f"[RESUME-4a] ⚠️  File doesn't exist yet (might be newly created)")
                     
                     # Generate session key for this file
                     session_key = self.session_storage.get_session_key_for_file(filepath)
                     
-                    if self.DEBUG_LOG:
-                        key_status = f"{session_key[:16]}..." if session_key else "None"
-                        self._log(f"[RESUME-5] Session key: {key_status}")
+                    key_status = f"{session_key[:16]}..." if session_key else "None"
+                    self._log(f"[RESUME-5] Session key generated: {key_status}")
                     
                     if session_key:
+                        # Check if session file exists on disk
+                        session_file_path = self.session_storage._get_session_filepath(session_key)
+                        session_file_exists = os.path.exists(session_file_path)
+                        self._log(f"[RESUME-6] Session file exists: {session_file_exists}")
+                        self._log(f"[RESUME-6a] Session file path: {session_file_path}")
+                        
                         # Try to load session from disk
                         session_json = self.session_storage.load_session(session_key)
                         
-                        if self.DEBUG_LOG:
-                            json_status = f"{len(session_json)} bytes" if session_json else "None (not found)"
-                            self._log(f"[RESUME-6] Session JSON: {json_status}")
+                        json_status = f"{len(session_json)} bytes" if session_json else "None (not found)"
+                        self._log(f"[RESUME-7] Session JSON loaded: {json_status}")
                         
                         if session_json:
                             # Resume existing session
-                            self._log(f"[RESUME-7] ✓ Found persisted session, importing...")
+                            self._log(f"[RESUME-8] ✓ Found persisted session, importing...")
+                            
+                            # Show snippet of JSON for debugging
+                            json_snippet = session_json[:200] if len(session_json) > 200 else session_json
+                            self._log(f"[RESUME-8a] JSON snippet: {json_snippet}...")
                             
                             session = self.session_manager.import_session(doc, session_json)
                             
                             if session:
-                                self._log(f"[RESUME-8] ✅ Session resumed: {session.id} (events: {session.event_count})")
+                                self._log(f"[RESUME-9] ✅ Session resumed: {session.id} (events: {session.event_count})")
                                 session_resumed = True
                             else:
-                                self._log(f"[RESUME-8] ⚠️  Session import failed")
+                                self._log(f"[RESUME-9] ❌ Session import failed (import_session returned None)")
                         else:
-                            if self.DEBUG_LOG:
-                                self._log(f"[RESUME-7] No persisted session found (first time opening this file)")
+                            self._log(f"[RESUME-8] No persisted session found (first time opening this file)")
+                            
+                            # List all session files to help debug
+                            all_sessions = self.session_storage.list_sessions()
+                            self._log(f"[RESUME-8a] Total session files on disk: {len(all_sessions)}")
+                            if all_sessions:
+                                self._log(f"[RESUME-8b] Session files: {all_sessions[:5]}...")  # Show first 5
                     else:
-                        self._log(f"[RESUME-5] ⚠️  Could not generate session key")
+                        self._log(f"[RESUME-5] ❌ Could not generate session key (file doesn't exist?)")
                 else:
-                    if self.DEBUG_LOG:
-                        self._log(f"[RESUME-4] Unsaved document, skipping resume")
+                    self._log(f"[RESUME-4] Unsaved document, skipping resume attempt")
                 
             except Exception as e:
                 self._log(f"[RESUME-ERROR] ❌ Error during resumption: {e}")
                 import traceback
                 self._log(f"[RESUME-ERROR] Traceback: {traceback.format_exc()}")
         else:
-            if self.DEBUG_LOG:
-                self._log(f"[RESUME-2] No SessionStorage, skipping resume")
+            self._log(f"[RESUME-2] ❌ No SessionStorage available, cannot resume")
         
         # Create new session if resume failed
         if not session_resumed:
@@ -369,52 +384,60 @@ class EventCapture:
             context: Description of when this is called (for logging)
         """
         if not self.session_storage:
-            if self.DEBUG_LOG:
-                self._log(f"[PERSIST-{context}] No SessionStorage available, skipping")
+            self._log(f"[PERSIST-{context}] ❌ No SessionStorage available")
             return
         
         try:
+            self._log(f"[PERSIST-1] ========== PERSIST SESSION ({context}) ==========")
+            self._log(f"[PERSIST-2] Session ID: {session.id}, Events: {session.event_count}")
+            
             filepath = doc.fileName()
             
             if not filepath:
-                if self.DEBUG_LOG:
-                    self._log(f"[PERSIST-{context}] ⚠️  Document has no filepath (unsaved), skipping")
+                self._log(f"[PERSIST-3] ⚠️  Document has no filepath (unsaved), skipping")
                 return
             
-            if self.DEBUG_LOG:
-                self._log(f"[PERSIST-{context}] Persisting session for: {doc.name()}")
+            self._log(f"[PERSIST-3] Document: {doc.name()}")
+            self._log(f"[PERSIST-3a] Filepath: {filepath}")
             
             # Generate session key for this file
             session_key = self.session_storage.get_session_key_for_file(filepath)
             
             if not session_key:
-                self._log(f"[PERSIST-{context}] ❌ Could not generate session key")
+                self._log(f"[PERSIST-4] ❌ Could not generate session key")
                 return
             
+            key_snippet = f"{session_key[:16]}..."
+            self._log(f"[PERSIST-4] Session key: {key_snippet}")
+            
             # Export session to JSON using session_manager helper
+            self._log(f"[PERSIST-5] Serializing session...")
             session_json = self.session_manager.session_to_json(session)
             
             if not session_json:
-                self._log(f"[PERSIST-{context}] ❌ Failed to serialize session")
+                self._log(f"[PERSIST-6] ❌ Serialization failed")
                 return
             
-            if self.DEBUG_LOG:
-                json_size = len(session_json)
-                self._log(f"[PERSIST-{context}] Session JSON: {json_size} bytes")
+            json_size = len(session_json)
+            self._log(f"[PERSIST-6] ✓ Serialized: {json_size} bytes")
             
             # Save to disk using session key as filename
+            self._log(f"[PERSIST-7] Saving to disk...")
             success = self.session_storage.save_session(session_key, session_json)
             
             if success:
-                if self.DEBUG_LOG:
-                    self._log(f"[PERSIST-{context}] ✅ Session persisted: {session.id} (events: {session.event_count})")
+                session_file_path = self.session_storage._get_session_filepath(session_key)
+                self._log(f"[PERSIST-8] ✅ SAVED SUCCESSFULLY!")
+                self._log(f"[PERSIST-8a] File: {session_file_path}")
+                self._log(f"[PERSIST-8b] Session ID: {session.id}")
+                self._log(f"[PERSIST-8c] Events saved: {session.event_count}")
             else:
-                self._log(f"[PERSIST-{context}] ❌ Failed to persist session")
+                self._log(f"[PERSIST-8] ❌ Save failed")
                 
         except Exception as e:
-            self._log(f"[PERSIST-{context}] ❌ Error persisting session: {e}")
+            self._log(f"[PERSIST-ERROR] ❌ Exception: {e}")
             import traceback
-            self._log(f"[PERSIST-{context}] Traceback: {traceback.format_exc()}")
+            self._log(f"[PERSIST-ERROR] Traceback: {traceback.format_exc()}")
     
     def _install_canvas_event_filter(self):
         """
@@ -638,18 +661,34 @@ class EventCapture:
     
     def on_image_created(self):
         """Handler for new document creation or file open - tries to resume session"""
-        if self.DEBUG_LOG:
-            self._log("[BFROS] ===== on_image_created SIGNAL FIRED =====")
+        self._log("[SESSION-FLOW] ========== on_image_created SIGNAL FIRED ==========")
         
         app = Krita.instance()
         doc = app.activeDocument()
         
         if not doc:
-            if self.DEBUG_LOG:
-                self._log("[BFROS] WARNING: imageCreated fired but no activeDocument!")
+            self._log("[SESSION-FLOW] ❌ No activeDocument!")
             return
         
-        self._log(f"Document created: {doc.name()}")
+        doc_name = doc.name()
+        doc_filepath = doc.fileName()
+        doc_id = id(doc)
+        
+        self._log(f"[SESSION-FLOW-1] Document: {doc_name}")
+        self._log(f"[SESSION-FLOW-2] Filepath: {doc_filepath if doc_filepath else 'None (unsaved)'}")
+        self._log(f"[SESSION-FLOW-3] Document ID: {doc_id}")
+        
+        # Check if session already exists in memory
+        has_session = self.session_manager.has_session(doc)
+        self._log(f"[SESSION-FLOW-4] Session exists in memory: {has_session}")
+        
+        if has_session:
+            existing_session = self.session_manager.get_session(doc)
+            event_count = existing_session.event_count if existing_session else "N/A"
+            self._log(f"[SESSION-FLOW-5] ⚠️  Session already in memory, skipping resume (events: {event_count})")
+        else:
+            self._log(f"[SESSION-FLOW-5] No session in memory, will try to resume or create...")
+            self._try_resume_or_create_session(doc, "imageCreated signal")
         
         if self.DEBUG_LOG:
             try:
@@ -667,15 +706,11 @@ class EventCapture:
         QTimer.singleShot(1000, lambda: self._delayed_canvas_retry(doc, "1000ms delay"))
         QTimer.singleShot(2000, lambda: self._delayed_canvas_retry(doc, "2000ms delay"))
         
-        # === SESSION RESUMPTION LOGIC (Task 1.15) - DRY ===
-        if not self.session_manager.has_session(doc):
-            self._try_resume_or_create_session(doc, "imageCreated signal")
-        else:
-            if self.DEBUG_LOG:
-                self._log(f"[RESUME-1] Session already exists in memory for: {doc.name()}")
-        
         # Connect signals for this document
         self.connect_document_signals(doc)
+        
+        self._log("[SESSION-FLOW] ========== on_image_created COMPLETE ==========")
+
     
     def on_image_closed(self):
         """Handler for document close"""
