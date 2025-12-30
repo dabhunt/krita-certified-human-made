@@ -97,6 +97,19 @@ class CHMExtension(Extension):
         self.path_prefs = PathPreferences()
         self._log(f"Path preferences initialized (default: {self.path_prefs.default_documents_path})")
         
+        # Initialize C2PA builder (Phase 3: C2PA Integration)
+        try:
+            from .c2pa_builder import CHMtoC2PABuilder
+            self.c2pa_builder = CHMtoC2PABuilder(debug_log=self.DEBUG_LOG)
+            self.c2pa_enabled = True  # Can be toggled via settings
+            if self.DEBUG_LOG:
+                print(f"[CHM-INIT] C2PA builder initialized (enabled: {self.c2pa_enabled})")
+        except Exception as e:
+            if self.DEBUG_LOG:
+                print(f"[CHM-INIT] ⚠️  C2PA builder not available: {e}")
+            self.c2pa_builder = None
+            self.c2pa_enabled = False
+        
         # Auto-start event capture
         self.start_capture()
         
@@ -342,6 +355,39 @@ class CHMExtension(Extension):
                 submission_status = f"⚠️  Submission failed: {e}"
                 # Non-fatal - proof still saved locally
             
+            # Embed C2PA manifest if enabled (Phase 3: C2PA Integration)
+            c2pa_status = "Not embedded (disabled)"
+            if self.c2pa_enabled and self.c2pa_builder:
+                try:
+                    self._log("[EXPORT] Embedding C2PA Content Credentials...")
+                    
+                    # Generate C2PA manifest from proof
+                    manifest = self.c2pa_builder.generate_manifest(
+                        session_proof_json=json.dumps(proof_dict),
+                        cert_path=None,  # TODO: Get from settings
+                        key_path=None,   # TODO: Get from settings
+                        privacy_mode="lite"  # Aggregate data only (privacy-preserving)
+                    )
+                    
+                    if manifest:
+                        # Embed manifest in exported image
+                        success = self.c2pa_builder.embed_in_image(filename, manifest)
+                        
+                        if success:
+                            self._log("[EXPORT] ✅ C2PA manifest embedded successfully")
+                            c2pa_status = "✓ C2PA embedded (unsigned)"
+                        else:
+                            self._log("[EXPORT] ⚠️  C2PA embedding failed")
+                            c2pa_status = "⚠️  C2PA embedding failed"
+                    else:
+                        self._log("[EXPORT] ⚠️  C2PA manifest generation failed")
+                        c2pa_status = "⚠️  C2PA generation failed"
+                        
+                except Exception as e:
+                    self._log(f"[EXPORT] ⚠️  C2PA error (non-fatal): {e}")
+                    c2pa_status = f"⚠️  C2PA error: {str(e)[:50]}"
+                    # Non-fatal - proof still valid without C2PA
+            
             # Show success message with timestamp URLs
             message = (
                 f"✅ Image exported with CHM proof!\n\n"
@@ -351,7 +397,8 @@ class CHMExtension(Extension):
                 f"Strokes: {proof.to_dict().get('event_summary', {}).get('stroke_count', 0)}\n"
                 f"Duration: {proof.to_dict().get('event_summary', {}).get('session_duration_secs', 0)}s\n\n"
                 f"Timestamps: {timestamp_status}\n"
-                f"Database: {submission_status}"
+                f"Database: {submission_status}\n"
+                f"C2PA: {c2pa_status}"
             )
             
             # Add clickable GitHub URL if available

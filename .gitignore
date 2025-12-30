@@ -75,3 +75,6 @@ secrets.json
 # Documentation (internal working docs, not for public repo)
 /docs/
 
+
+# Master signing key for plugin integrity (NEVER COMMIT THIS!)
+.signing-key.secret
