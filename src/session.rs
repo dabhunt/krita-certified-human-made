@@ -46,6 +46,10 @@ pub struct CHMSession {
     encryption_key: EncryptionKey,
     signing_key: SigningKey,
     pub is_finalized: bool,
+    
+    // AFK (Away From Keyboard) detection fields
+    last_activity_time: DateTime<Utc>,
+    accumulated_idle_secs: i64,
 }
 
 impl CHMSession {
@@ -58,10 +62,11 @@ impl CHMSession {
     pub fn with_config(config: SessionConfig) -> Result<Self> {
         let encryption_key = EncryptionKey::generate()?;
         let signing_key = SigningKey::generate()?;
+        let now = Utc::now();
         
         let session = Self {
             id: Uuid::new_v4(),
-            start_time: Utc::now(),
+            start_time: now,
             events: Vec::new(),
             metadata: SessionMetadata {
                 document_name: None,
@@ -74,6 +79,8 @@ impl CHMSession {
             encryption_key,
             signing_key,
             is_finalized: false,
+            last_activity_time: now,
+            accumulated_idle_secs: 0,
         };
 
         log::info!("Created new CHM session: {}", session.id);
@@ -174,6 +181,9 @@ impl CHMSession {
 
     /// Internal method to record any event
     fn record_event(&mut self, event: SessionEvent) -> Result<()> {
+        // Update AFK tracking - accumulate any idle time and reset activity timer
+        self.update_idle_tracking();
+        
         self.events.push(event);
 
         // Auto-encrypt if threshold reached (will implement in crypto module)
@@ -401,9 +411,51 @@ impl CHMSession {
         self.events.len()
     }
 
-    /// Get session duration in seconds
+    /// AFK (Away From Keyboard) threshold in seconds
+    /// If no activity for this duration, time won't count toward session duration
+    const AFK_THRESHOLD_SECS: i64 = 10;
+
+    /// Get session duration in seconds (excludes AFK/idle time)
     pub fn duration_secs(&self) -> i64 {
-        (Utc::now() - self.start_time).num_seconds()
+        let total_elapsed = (Utc::now() - self.start_time).num_seconds();
+        let current_idle = self.calculate_current_idle_time();
+        
+        // Total duration = elapsed time - accumulated idle - current idle period
+        total_elapsed - self.accumulated_idle_secs - current_idle
+    }
+
+    /// Calculate current idle time if we're currently idle
+    fn calculate_current_idle_time(&self) -> i64 {
+        let time_since_activity = (Utc::now() - self.last_activity_time).num_seconds();
+        
+        if time_since_activity > Self::AFK_THRESHOLD_SECS {
+            // Currently idle - return the idle time (minus the threshold grace period)
+            time_since_activity - Self::AFK_THRESHOLD_SECS
+        } else {
+            // Not idle yet
+            0
+        }
+    }
+
+    /// Update accumulated idle time when activity resumes
+    /// This should be called whenever a new event is recorded
+    fn update_idle_tracking(&mut self) {
+        let time_since_activity = (Utc::now() - self.last_activity_time).num_seconds();
+        
+        // If we were idle, accumulate that idle time
+        if time_since_activity > Self::AFK_THRESHOLD_SECS {
+            let idle_period = time_since_activity - Self::AFK_THRESHOLD_SECS;
+            self.accumulated_idle_secs += idle_period;
+            
+            log::debug!(
+                "AFK period ended: {}s idle (total accumulated: {}s)",
+                idle_period,
+                self.accumulated_idle_secs
+            );
+        }
+        
+        // Reset activity timer
+        self.last_activity_time = Utc::now();
     }
 
     /// Check if session is finalized
