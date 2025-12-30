@@ -392,16 +392,7 @@ class EventCapture:
                 return
             
             # Export session to JSON using session_manager helper
-            if self.DEBUG_LOG:
-                self._log(f"[BUG#001-1] About to call session_manager.session_to_json()")
-                self._log(f"[BUG#001-2] session_manager type: {type(self.session_manager)}")
-                self._log(f"[BUG#001-3] session type: {type(session)}")
-                self._log(f"[BUG#001-4] session.id: {session.id}")
-            
             session_json = self.session_manager.session_to_json(session)
-            
-            if self.DEBUG_LOG:
-                self._log(f"[BUG#001-5] session_to_json() returned: {type(session_json)} = {session_json[:100] if session_json else 'None'}")
             
             if not session_json:
                 self._log(f"[PERSIST-{context}] ❌ Failed to serialize session")
