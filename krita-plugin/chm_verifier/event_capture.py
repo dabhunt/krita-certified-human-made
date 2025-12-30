@@ -501,13 +501,14 @@ class EventCapture:
             
             # BFROS: Check if filter is still alive (Python GC issue check)
             if self.DEBUG_LOG:
-                self._log(f"[BFROS] Canvas filter object: {self.canvas_event_filter}")
-                self._log(f"[BFROS] Filter events received so far: {self.canvas_event_filter.event_count}")
+                #self._log(f"[BFROS] Canvas filter object: {self.canvas_event_filter}")
+                
+                #self._log(f"[BFROS] Filter events received so far: {self.canvas_event_filter.event_count}")
                 
                 # BFROS: Search for ALL possible input widgets (not just QOpenGLWidget)
                 from PyQt5.QtWidgets import QWidget
                 all_widgets = qwindow.findChildren(QWidget)
-                self._log(f"[BFROS] Searching {len(all_widgets)} widgets for input-enabled ones...")
+                #self._log(f"[BFROS] Searching {len(all_widgets)} widgets for input-enabled ones...")
                 
                 input_widgets = []
                 for widget in all_widgets:
@@ -515,9 +516,9 @@ class EventCapture:
                     if widget.isEnabled() and widget.testAttribute(Qt.WA_InputMethodEnabled) or True:  # Check all for now
                         widget_info = f"{type(widget).__name__} size={widget.width()}x{widget.height()} visible={widget.isVisible()}"
                         # Look for widgets close to document size (500x500)
-                        if 400 < widget.width() < 600 and 400 < widget.height() < 600:
+                        #if 400 < widget.width() < 600 and 400 < widget.height() < 600:
                             input_widgets.append((widget, widget_info))
-                            self._log(f"[BFROS] ★ POTENTIAL DOCUMENT CANVAS: {widget_info}")
+                            #self._log(f"[BFROS] ★ POTENTIAL DOCUMENT CANVAS: {widget_info}")
                 
                 if not input_widgets:
                     self._log(f"[BFROS] No widgets matching document size (500x500) found!")

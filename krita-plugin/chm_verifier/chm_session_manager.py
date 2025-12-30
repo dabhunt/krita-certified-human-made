@@ -13,8 +13,30 @@ class CHMSessionManager:
     """Manages CHM sessions for multiple documents"""
     
     def __init__(self, debug_log=True):
-        self.active_sessions = {}  # Map: document_ptr -> CHMSession
+        self.active_sessions = {}  # Map: stable_doc_key -> CHMSession
         self.DEBUG_LOG = debug_log
+    
+    def _get_document_key(self, document):
+        """
+        Get stable identifier for a document.
+        
+        Uses fileName() if available (most stable), otherwise falls back to id().
+        This prevents session loss when Python creates new wrapper objects for same document.
+        
+        Args:
+            document: Krita document
+            
+        Returns:
+            str: Stable document identifier
+        """
+        filepath = document.fileName()
+        if filepath:
+            # Use filepath as stable key (same file = same key)
+            return filepath
+        else:
+            # Unsaved document: use Python object ID
+            # Note: This may change if document reference changes before save
+            return f"unsaved_{id(document)}"
         
     def create_session(self, document, session_id=None):
         """
@@ -27,11 +49,11 @@ class CHMSessionManager:
         Returns:
             CHMSession object
         """
-        doc_id = id(document)
+        doc_key = self._get_document_key(document)
         
-        if doc_id in self.active_sessions:
-            self._log(f"Session already exists for document {doc_id}")
-            return self.active_sessions[doc_id]
+        if doc_key in self.active_sessions:
+            self._log(f"Session already exists for document {doc_key}")
+            return self.active_sessions[doc_key]
         
         # Create session with specific ID if provided (for continuity)
         if session_id:
@@ -51,15 +73,15 @@ class CHMSessionManager:
             os_info=None  # Will be set by extension
         )
         
-        self.active_sessions[doc_id] = session
-        self._log(f"Created session {session.id} for document {doc_id}")
+        self.active_sessions[doc_key] = session
+        self._log(f"Created session {session.id} for document {doc_key}")
         
         return session
     
     def get_session(self, document):
         """Get existing session for a document"""
-        doc_id = id(document)
-        return self.active_sessions.get(doc_id)
+        doc_key = self._get_document_key(document)
+        return self.active_sessions.get(doc_key)
     
     def finalize_session(self, document, artwork_path=None, ai_plugins=None, for_export=False):
         """
@@ -78,8 +100,8 @@ class CHMSessionManager:
         Returns:
             CHMProof object or None
         """
-        doc_id = id(document)
-        session = self.active_sessions.get(doc_id)
+        doc_key = self._get_document_key(document)
+        session = self.active_sessions.get(doc_key)
         
         if not session:
             self._log(f"[FINALIZE-ERROR] ❌ No session found for document {doc_id}")
@@ -126,7 +148,7 @@ class CHMSessionManager:
         # Only remove session from memory if document is closing (not for export)
         if not for_export:
             self._log(f"[FINALIZE-6] Removing session from memory (document closed)")
-            del self.active_sessions[doc_id]
+            del self.active_sessions[doc_key]
         else:
             self._log(f"[FINALIZE-6] Original session still active (can continue recording)")
         
@@ -134,7 +156,8 @@ class CHMSessionManager:
     
     def has_session(self, document):
         """Check if document has an active session"""
-        return id(document) in self.active_sessions
+        doc_key = self._get_document_key(document)
+        return doc_key in self.active_sessions
     
     def import_session(self, document, session_json):
         """
@@ -151,7 +174,7 @@ class CHMSessionManager:
             CHMSession object or None if import fails
         """
         try:
-            doc_id = id(document)
+            doc_key = self._get_document_key(document)
             
             # Parse session JSON
             session_data = json.loads(session_json)
@@ -190,8 +213,9 @@ class CHMSessionManager:
             session.finalized = False
             self._log(f"[IMPORT-7] Session ready (finalized=False)")
             
-            # Associate with document
-            self.active_sessions[doc_id] = session
+            # Associate with document using stable key
+            self.active_sessions[doc_key] = session
+            self._log(f"[IMPORT-7a] Stored session with key: {doc_key}")
             
             event_count = len(session.events) if hasattr(session, 'events') else 0
             self._log(f"[IMPORT-8] ✅ Session restored: {session.id} ({event_count} events)")
