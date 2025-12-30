@@ -39,6 +39,17 @@ cp "$SOURCE_DIR/chm_verifier.desktop" "$PLUGIN_DIR/" 2>/dev/null || true
 echo "✅ Python files updated"
 echo ""
 
+echo "Updating C2PA certificates..."
+# Copy certs directory if it exists
+if [ -d "$SOURCE_DIR/certs" ]; then
+    mkdir -p "$PLUGIN_DIR/chm_verifier/certs"
+    cp -r "$SOURCE_DIR/certs/"* "$PLUGIN_DIR/chm_verifier/certs/" 2>/dev/null || true
+    echo "✅ C2PA certificates copied"
+else
+    echo "ℹ️  No certs directory found (C2PA signing will be unavailable)"
+fi
+echo ""
+
 # Check if Rust library needs updating
 SOURCE_LIB="$SOURCE_DIR/lib/chm.so"
 DEST_LIB="$PLUGIN_DIR/chm_verifier/lib/chm.so"
