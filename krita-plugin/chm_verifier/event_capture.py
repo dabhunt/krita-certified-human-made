@@ -517,8 +517,8 @@ class EventCapture:
                         widget_info = f"{type(widget).__name__} size={widget.width()}x{widget.height()} visible={widget.isVisible()}"
                         # Look for widgets close to document size (500x500)
                         #if 400 < widget.width() < 600 and 400 < widget.height() < 600:
-                            input_widgets.append((widget, widget_info))
-                            #self._log(f"[BFROS] ★ POTENTIAL DOCUMENT CANVAS: {widget_info}")
+                        input_widgets.append((widget, widget_info))
+                        #self._log(f"[BFROS] ★ POTENTIAL DOCUMENT CANVAS: {widget_info}")
                 
                 if not input_widgets:
                     self._log(f"[BFROS] No widgets matching document size (500x500) found!")
