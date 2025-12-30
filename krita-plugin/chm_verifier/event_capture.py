@@ -912,6 +912,9 @@ class EventCapture:
                     self._log(f"[BFROS-STROKE] ✓ Transition detected (False → True)")
             
             if should_record:
+                import time
+                current_time = time.time()  # BFROS FIX: Define current_time before use
+                
                 session = self.session_manager.get_session(doc)
                 
                 # ROAA FALLBACK: If no session exists, create one NOW (cleaner approach)
@@ -953,7 +956,7 @@ class EventCapture:
                         brush_name="Unknown"
                     )
                     
-                    # Update last stroke time for rate limiting
+                    # Update last stroke time (not used for detection anymore, but kept for future features)
                     self._last_stroke_time[doc_id] = current_time
                     
                     if self.DEBUG_LOG:
