@@ -226,7 +226,6 @@ class CHMtoC2PABuilder:
         Maps CHM classification to C2PA AI flag.
         """
         classification = proof.get('classification', 'Unknown')
-        confidence = proof.get('confidence', 0.0)
         
         is_ai = classification in ["AIAssisted", "MixedMedia"]
         
@@ -240,8 +239,7 @@ class CHMtoC2PABuilder:
                 "isAIGenerated": is_ai,
                 "tool": plugins_used if is_ai else [],
                 "metadata": {
-                    "chm_classification": classification,
-                    "confidence": confidence
+                    "chm_classification": classification
                 }
             }
         }
@@ -289,7 +287,6 @@ class CHMtoC2PABuilder:
         metadata = {
             "session_id": proof.get('session_id', 'unknown'),
             "classification": proof.get('classification', 'Unknown'),
-            "confidence": proof.get('confidence', 0.0),
             "privacy_mode": privacy_mode,
             "chm_version": "0.2.0"
         }

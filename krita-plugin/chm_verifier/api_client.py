@@ -183,7 +183,6 @@ class CHMApiClient:
                 index[file_hash] = {
                     'session_id': proof_record['session_id'],
                     'classification': proof_record.get('classification', 'Unknown'),
-                    'confidence': proof_record.get('confidence', 0.0),
                     'submitted_at': proof_record['submitted_at'],
                     'perceptual_hash': proof_record.get('perceptual_hash')
                 }
@@ -254,7 +253,6 @@ if __name__ == "__main__":
         'file_hash': 'abc123' * 10,  # 60 chars
         'perceptual_hash': 'def456789abcdef0',
         'classification': 'HumanMade',
-        'confidence': 0.95,
         'event_summary': {
             'stroke_count': 42,
             'duration_seconds': 300

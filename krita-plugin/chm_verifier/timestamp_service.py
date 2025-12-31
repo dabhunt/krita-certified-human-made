@@ -249,7 +249,6 @@ class TripleTimestampService:
             gist_content['proof_details'] = {
                 # Classification
                 'classification': proof_dict.get('classification', 'Unknown'),
-                'confidence': proof_dict.get('confidence', 0.0),
                 
                 # Session info
                 'session_id': proof_dict.get('session_id'),

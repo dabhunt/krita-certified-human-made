@@ -63,10 +63,8 @@ class VerificationDialog(QDialog):
         class_layout = QFormLayout()
         
         self.class_label = QLabel("Loading...")
-        self.confidence_label = QLabel("Loading...")
         
         class_layout.addRow("Classification:", self.class_label)
-        class_layout.addRow("Confidence:", self.confidence_label)
         class_group.setLayout(class_layout)
         layout.addWidget(class_group)
         
@@ -132,13 +130,11 @@ class VerificationDialog(QDialog):
         
         # Classification
         classification = proof_data.get("classification", "Unknown")
-        confidence = proof_data.get("confidence", 0.0)
         
-        print(f"[FLOW-6] Classification: {classification}, Confidence: {confidence}")
+        print(f"[FLOW-6] Classification: {classification}")
         sys.stdout.flush()
         
         self.class_label.setText(classification)
-        self.confidence_label.setText(f"{confidence * 100:.1f}%")
         
         # Session info
         session_id = proof_data.get("session_id", "N/A")

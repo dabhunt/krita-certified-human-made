@@ -313,9 +313,8 @@ class CHMSession:
         
         # Classify session
         classification = self._classify()
-        confidence = 1.0 if classification == "HumanMade" else 0.5  # Simple confidence
         
-        print(f"[FLOW-3d] 🏷️ Classification: {classification} (confidence: {confidence})")
+        print(f"[FLOW-3d] 🏷️ Classification: {classification}")
         sys.stdout.flush()
         
         # Create proof summary
@@ -336,7 +335,6 @@ class CHMSession:
             "events_hash": events_hash,
             "file_hash": file_hash if file_hash else "placeholder_no_artwork_provided",
             "classification": classification,
-            "confidence": confidence,
             "metadata": self.metadata
         }
         
