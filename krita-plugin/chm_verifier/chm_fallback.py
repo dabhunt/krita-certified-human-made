@@ -200,7 +200,8 @@ class CHMSession:
         
         # Count event types
         stroke_count = sum(1 for e in self.events if e.get("type") == "stroke")
-        layer_count = sum(1 for e in self.events if e.get("type") == "layer_created")
+        # BUG FIX: Check both "layer_created" and "layer_added" (we use record_layer_added)
+        layer_count = sum(1 for e in self.events if e.get("type") in ["layer_created", "layer_added"])
         import_count = sum(1 for e in self.events if e.get("type") == "import")
         
         # Generate event hash
