@@ -531,18 +531,83 @@ class CHMExtension(Extension):
             )
             return
         
-        # Show session info without finalizing
-        QMessageBox.information(
-            None,
-            "CHM Current Session",
-            f"Session ID: {session.id}\n\n"
-            f"Events recorded: {session.event_count}\n"
-            f"Document: {doc.name()}\n"
-            f"Size: {doc.width()}x{doc.height()}\n\n"
-            f"(Session is still active - not finalized)"
+        # Get comprehensive session info (without finalizing)
+        doc_id = str(id(doc))
+        
+        # Count events by type
+        stroke_count = sum(1 for e in session.events if e.get("type") == "stroke")
+        layer_count = sum(1 for e in session.events if e.get("type") in ["layer_created", "layer_added"])
+        import_count = sum(1 for e in session.events if e.get("type") == "import")
+        
+        # Get current classification (preview - not finalized)
+        classification = session._classify(
+            doc=doc,
+            doc_id=doc_id,
+            tracing_detector=self.event_capture.tracing_detector
         )
         
-        self._log(f"[VIEW] Session info displayed: {session.id}, {session.event_count} events")
+        # Get tracing info
+        tracing_detected = session.metadata.get("tracing_detected", False)
+        tracing_percentage = session.metadata.get("tracing_percentage", 0.0)
+        
+        # Get AI tools info
+        ai_tools_used = session.metadata.get("ai_tools_used", False)
+        ai_tools_list = session.metadata.get("ai_tools_list", [])
+        
+        # Check if imports are visible (MixedMedia check)
+        mixed_media_check = ""
+        if import_count > 0:
+            is_mixed = self.event_capture.tracing_detector.check_mixed_media(doc, doc_id)
+            mixed_media_check = f"\nImports Visible: {'Yes (MixedMedia)' if is_mixed else 'No (Hidden references)'}"
+        
+        # Build comprehensive info message
+        info_message = (
+            f"📊 CURRENT SESSION STATUS\n"
+            f"{'='*40}\n\n"
+            f"🆔 Session ID: {session.id[:16]}...\n"
+            f"📄 Document: {doc.name()}\n"
+            f"📐 Canvas: {doc.width()}x{doc.height()}px\n"
+            f"⏱️  Duration: {session.duration_secs}s ({session.duration_secs // 60}m {session.duration_secs % 60}s)\n\n"
+            f"🎨 ACTIVITY\n"
+            f"{'='*40}\n"
+            f"Total Events: {session.event_count}\n"
+            f"• Brush Strokes: {stroke_count}\n"
+            f"• Layers Added: {layer_count}\n"
+            f"• Images Imported: {import_count}\n\n"
+            f"🏷️  CLASSIFICATION (Preview)\n"
+            f"{'='*40}\n"
+            f"Current: {classification}\n"
+        )
+        
+        # Add tracing info if detected
+        if tracing_detected:
+            info_message += f"⚠️  Tracing Detected: {tracing_percentage*100:.1f}%\n"
+        else:
+            info_message += f"✓ No Tracing: 0.0%\n"
+        
+        # Add import visibility info
+        if import_count > 0:
+            info_message += mixed_media_check + "\n"
+        
+        # Add AI tools info
+        if ai_tools_used:
+            info_message += f"\n🤖 AI Tools: {', '.join(ai_tools_list)}\n"
+        
+        info_message += (
+            f"\n{'='*40}\n"
+            f"ℹ️  Session is still ACTIVE\n"
+            f"Classification may change as you continue working.\n"
+            f"Final classification determined on export."
+        )
+        
+        # Show in dialog
+        QMessageBox.information(
+            None,
+            "CHM Active Session",
+            info_message
+        )
+        
+        self._log(f"[VIEW] Session info displayed: {session.id}, classification: {classification}, imports: {import_count}")
     
     def test_finalize_and_show_proof(self):
         """Test action to finalize current session and show proof dialog"""
