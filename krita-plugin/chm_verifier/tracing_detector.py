@@ -208,23 +208,49 @@ class TracingDetector:
         """
         # Skip if no imports
         if doc_id not in self.import_hashes or not self.import_hashes[doc_id]:
+            if self.DEBUG_LOG:
+                self._log(f"[MIXED-MEDIA] No imports registered for doc_id: {doc_id}")
             return False
         
+        if self.DEBUG_LOG:
+            self._log(f"[MIXED-MEDIA] Checking {len(self.import_hashes[doc_id])} registered imports")
+        
         try:
-            # Check if any import layers are visible
+            # BUG#004 FIX: Re-fetch layers by name instead of using stored references
+            # Stored layer_node references may become stale
             for import_id, import_data in self.import_hashes[doc_id].items():
-                layer_node = import_data['layer_node']
+                layer_name = import_data['layer_name']
+                
+                if self.DEBUG_LOG:
+                    self._log(f"[MIXED-MEDIA] Checking layer: {layer_name}")
+                
+                # Re-fetch layer from document (more reliable than stored reference)
+                layer_node = doc.nodeByName(layer_name)
+                
+                if not layer_node:
+                    if self.DEBUG_LOG:
+                        self._log(f"[MIXED-MEDIA] ⚠️  Layer not found by name: {layer_name}")
+                    continue
                 
                 # Check if layer is visible
-                if layer_node.visible():
+                is_visible = layer_node.visible()
+                
+                if self.DEBUG_LOG:
+                    self._log(f"[MIXED-MEDIA] Layer '{layer_name}' visible: {is_visible}")
+                
+                if is_visible:
                     if self.DEBUG_LOG:
-                        self._log(f"[MIXED-MEDIA] ✓ Import layer visible: {import_data['layer_name']}")
+                        self._log(f"[MIXED-MEDIA] ✓ Import layer visible: {layer_name}")
                     return True
             
+            if self.DEBUG_LOG:
+                self._log(f"[MIXED-MEDIA] No visible import layers found")
             return False
             
         except Exception as e:
             self._log(f"[MIXED-MEDIA] ❌ Error checking visibility: {e}")
+            import traceback
+            self._log(f"[MIXED-MEDIA] Traceback: {traceback.format_exc()}")
             return False
     
     def _get_paint_layers(self, doc) -> List:

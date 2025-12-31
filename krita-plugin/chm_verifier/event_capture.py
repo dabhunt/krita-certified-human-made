@@ -185,6 +185,11 @@ class EventCapture:
         # Tracing Detection: Perceptual hash comparison
         self.tracing_detector = TracingDetector(debug_log=debug_log)
         
+        # BUG#003 FIX: Delayed import detection for paste operations
+        # Paste may create layer before pixels are loaded - need delayed check
+        self.pending_import_checks = {}  # doc_id -> [(layer_name, check_count)]
+        self.IMPORT_CHECK_DELAY = 3  # Check for 3 polls (1.5 seconds) after layer creation
+        
     def start_capture(self):
         """Start capturing events globally"""
         app = Krita.instance()
@@ -963,6 +968,9 @@ class EventCapture:
         # Poll layer changes
         self.poll_layer_changes(doc, doc_id)
         
+        # BUG#003 FIX: Process pending import checks (delayed paste detection)
+        self.poll_pending_imports(doc, doc_id)
+        
         # Poll document modification (PRIMARY stroke detection)
         self.poll_document_modification(doc, doc_id)
     
@@ -1027,18 +1035,29 @@ class EventCapture:
                             # Method 2: Check if it's a paint layer with suspicious characteristics
                             # (likely pasted image)
                             elif layer_type == "paintlayer":
-                                # Check if layer has pixel data (non-empty)
-                                # Pasted images create paint layers with full pixel data
+                                # BUG#003 FIX: Paste may create layer before pixels load
+                                # Check immediately, but also add to pending checks for delayed verification
                                 try:
                                     # Get layer bounds to see if it has content
                                     bounds = node.bounds()
                                     if bounds and bounds.width() > 0 and bounds.height() > 0:
-                                        # Layer has content - check if it's likely imported
-                                        # Heuristic: If layer appears immediately with content, likely paste
-                                        # (vs gradual drawing which would be strokes)
+                                        # Layer has content immediately - definitely imported
                                         is_import = True
-                                        import_type = "paste_or_import"
-                                        self._log(f"[IMPORT-DETECT] Paint layer with content: {layer_name} ({bounds.width()}x{bounds.height()})")
+                                        import_type = "paste_immediate"
+                                        self._log(f"[IMPORT-DETECT] Paint layer with immediate content: {layer_name} ({bounds.width()}x{bounds.height()})")
+                                    else:
+                                        # No bounds yet - may be paste operation loading pixels
+                                        # Add to pending checks for delayed verification
+                                        self._log(f"[IMPORT-DETECT] Paint layer with no bounds yet: {layer_name} - adding to pending checks")
+                                        
+                                        if doc_id not in self.pending_import_checks:
+                                            self.pending_import_checks[doc_id] = []
+                                        
+                                        self.pending_import_checks[doc_id].append({
+                                            'layer_name': layer_name,
+                                            'node': node,
+                                            'checks_remaining': self.IMPORT_CHECK_DELAY
+                                        })
                                 except Exception as e:
                                     self._log(f"[IMPORT-DETECT] Could not check bounds: {e}")
                             
@@ -1066,6 +1085,84 @@ class EventCapture:
         
         # Update cache
         self.layer_cache[doc_id] = current_layers
+    
+    def poll_pending_imports(self, doc, doc_id):
+        """
+        BUG#003 FIX: Check pending import detections (delayed paste detection).
+        
+        Paste operations may create layers before pixels are loaded.
+        This method re-checks layers after a delay to catch late-loading content.
+        """
+        if doc_id not in self.pending_import_checks:
+            return
+        
+        pending = self.pending_import_checks[doc_id]
+        if not pending:
+            return
+        
+        session = self.session_manager.get_session(doc)
+        if not session:
+            return
+        
+        # Process each pending check
+        still_pending = []
+        
+        for check in pending:
+            layer_name = check['layer_name']
+            node = check['node']
+            checks_remaining = check['checks_remaining']
+            
+            try:
+                # Re-fetch layer to ensure we have current state
+                current_node = doc.nodeByName(layer_name)
+                if not current_node:
+                    self._log(f"[IMPORT-PENDING] Layer disappeared: {layer_name}")
+                    continue  # Layer was deleted, skip
+                
+                # Check if layer now has bounds (pixels loaded)
+                bounds = current_node.bounds()
+                
+                if bounds and bounds.width() > 0 and bounds.height() > 0:
+                    # SUCCESS: Layer now has content - register as import!
+                    self._log(f"[IMPORT-PENDING] ✓ Delayed detection SUCCESS: {layer_name} ({bounds.width()}x{bounds.height()})")
+                    
+                    # Record as import
+                    session.record_import(
+                        file_path=layer_name,
+                        import_type="paste_delayed",
+                        timestamp=time.time()
+                    )
+                    
+                    # Register with tracing detector
+                    self.tracing_detector.register_import(
+                        doc_id=str(doc_id),
+                        layer_node=current_node,
+                        layer_name=layer_name
+                    )
+                    
+                    self._log(f"[IMPORT] ✓ Import detected (delayed): {layer_name} (type: paste_delayed)")
+                    # Don't add back to pending - detection complete
+                    
+                else:
+                    # Still no bounds - decrement counter and check again
+                    checks_remaining -= 1
+                    
+                    if checks_remaining > 0:
+                        # Still have checks remaining, keep in pending
+                        check['checks_remaining'] = checks_remaining
+                        still_pending.append(check)
+                        
+                        if self.DEBUG_LOG and checks_remaining == 1:
+                            self._log(f"[IMPORT-PENDING] Layer still empty, last check: {layer_name}")
+                    else:
+                        # Out of checks - assume it's not an import (manual layer creation)
+                        self._log(f"[IMPORT-PENDING] ✗ Layer remained empty, not an import: {layer_name}")
+                        
+            except Exception as e:
+                self._log(f"[IMPORT-PENDING] Error checking {layer_name}: {e}")
+        
+        # Update pending list
+        self.pending_import_checks[doc_id] = still_pending
     
     def poll_document_modification(self, doc, doc_id):
         """
