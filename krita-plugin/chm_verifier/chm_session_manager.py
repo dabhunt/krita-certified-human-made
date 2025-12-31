@@ -83,7 +83,7 @@ class CHMSessionManager:
         doc_key = self._get_document_key(document)
         return self.active_sessions.get(doc_key)
     
-    def finalize_session(self, document, artwork_path=None, ai_plugins=None, for_export=False):
+    def finalize_session(self, document, artwork_path=None, ai_plugins=None, for_export=False, tracing_detector=None):
         """
         Finalize session and generate proof.
         
@@ -96,6 +96,7 @@ class CHMSessionManager:
             ai_plugins: Optional list of detected AI plugin dicts
                        (from PluginMonitor.get_enabled_ai_plugins())
             for_export: If True, create snapshot for proof (keeps original session alive)
+            tracing_detector: Optional TracingDetector instance for MixedMedia detection
         
         Returns:
             CHMProof object or None
@@ -136,12 +137,22 @@ class CHMSessionManager:
                     session_to_finalize.record_plugin_used(plugin_name, plugin_type)
         
         # Finalize with artwork path for dual-hash computation
+        doc_id = str(id(document))
         if artwork_path:
             self._log(f"[FINALIZE-4] Computing file hash for: {artwork_path}")
-            proof = session_to_finalize.finalize(artwork_path)
+            proof = session_to_finalize.finalize(
+                artwork_path=artwork_path,
+                doc=document,
+                doc_id=doc_id,
+                tracing_detector=tracing_detector
+            )
         else:
             self._log(f"[FINALIZE-4] No artwork path (using placeholder hashes)")
-            proof = session_to_finalize.finalize()
+            proof = session_to_finalize.finalize(
+                doc=document,
+                doc_id=doc_id,
+                tracing_detector=tracing_detector
+            )
         
         self._log(f"[FINALIZE-5] ✓ Proof generated: {len(proof.export_json())} bytes")
         

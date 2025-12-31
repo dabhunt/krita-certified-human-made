@@ -295,7 +295,7 @@ class CHMSession:
         self.metadata["ai_tools_list"] = ai_tools
         print(f"[AI-ASSISTED] 🤖 Session marked as AI-Assisted (tool: {tool_name})")
     
-    def finalize(self, artwork_path: Optional[str] = None) -> 'CHMProof':
+    def finalize(self, artwork_path: Optional[str] = None, doc=None, doc_id: Optional[str] = None, tracing_detector=None) -> 'CHMProof':
         """
         Finalize the session and generate a proof summary.
         
@@ -354,8 +354,8 @@ class CHMSession:
             print(f"[FLOW-3c-DUAL] ℹ️ No artwork path provided, using placeholder hashes")
             sys.stdout.flush()
         
-        # Classify session
-        classification = self._classify()
+        # Classify session (pass tracing detector for MixedMedia check)
+        classification = self._classify(doc=doc, doc_id=doc_id, tracing_detector=tracing_detector)
         
         print(f"[FLOW-3d] 🏷️ Classification: {classification}")
         sys.stdout.flush()
@@ -379,7 +379,7 @@ class CHMSession:
             "file_hash": file_hash if file_hash else "placeholder_no_artwork_provided",
             "classification": classification,
             "import_count": import_count,  # Track as separate metric (not part of classification)
-            "tracing_percentage": 0.0,  # Placeholder for future edge detection
+            "tracing_percentage": self.metadata.get("tracing_percentage", 0.0),  # Actual tracing % from detector
             "metadata": self.metadata
         }
         
@@ -432,7 +432,7 @@ class CHMSession:
         
         return snapshot
     
-    def _classify(self) -> str:
+    def _classify(self, doc=None, doc_id: Optional[str] = None, tracing_detector=None) -> str:
         """
         Classify the session based on events and metadata.
         
@@ -441,6 +441,11 @@ class CHMSession:
         - MixedMedia: Imported images visible in final export (but not traced)
         - AI-Assisted: AI tools detected in metadata
         - Traced: High % of traced content (>33% edge correlation) - STICKY
+        
+        Args:
+            doc: Krita document (optional, for MixedMedia detection)
+            doc_id: Document ID (optional, for MixedMedia detection)
+            tracing_detector: TracingDetector instance (optional, for MixedMedia detection)
         
         Returns:
             Classification string
@@ -451,23 +456,24 @@ class CHMSession:
             return "AI-Assisted"
         
         # Priority 2: Check for tracing (STICKY - once traced, always traced)
-        # Note: Edge detection not yet implemented, this is a placeholder
         tracing_detected = self.metadata.get("tracing_detected", False)
         if tracing_detected:
             return "Traced"
         
         # Priority 3: Check for visible imports in final export (MixedMedia)
-        # Note: Layer visibility analysis not yet implemented, this is a placeholder
-        # For now, we'll use a heuristic: if imports exist and no strokes, likely MixedMedia
         has_imports = any(e.get("type") == "import" for e in self.events)
-        has_strokes = any(e.get("type") == "stroke" for e in self.events)
         
-        # Placeholder heuristic for MixedMedia:
-        # If imports exist but very few strokes (< 10), likely just imported images
-        stroke_count = sum(1 for e in self.events if e.get("type") == "stroke")
-        if has_imports and stroke_count < 10:
-            # Likely just imported images with minimal editing
-            return "MixedMedia"
+        if has_imports:
+            # Use tracing detector to check if imports are visible
+            if tracing_detector and doc and doc_id:
+                is_mixed_media = tracing_detector.check_mixed_media(doc, doc_id)
+                if is_mixed_media:
+                    return "MixedMedia"
+            else:
+                # Fallback heuristic: If imports exist but very few strokes (< 10), likely MixedMedia
+                stroke_count = sum(1 for e in self.events if e.get("type") == "stroke")
+                if stroke_count < 10:
+                    return "MixedMedia"
         
         # Default: HumanMade (includes references as long as not traced/visible!)
         # References are ALLOWED and don't disqualify HumanMade classification

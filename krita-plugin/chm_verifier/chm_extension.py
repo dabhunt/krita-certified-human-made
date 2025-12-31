@@ -261,7 +261,8 @@ class CHMExtension(Extension):
                 doc, 
                 artwork_path=filename,  # ← Pass artwork path for file hash
                 ai_plugins=ai_plugins,
-                for_export=True  # ← Create snapshot, don't destroy active session
+                for_export=True,  # ← Create snapshot, don't destroy active session
+                tracing_detector=self.event_capture.tracing_detector  # ← Pass tracing detector for MixedMedia check
             )
             
             if not proof:
@@ -579,7 +580,11 @@ class CHMExtension(Extension):
         try:
             # Include AI plugins in finalization
             ai_plugins = self.plugin_monitor.get_enabled_ai_plugins() if self.plugin_monitor else []
-            proof = self.session_manager.finalize_session(doc, ai_plugins=ai_plugins)
+            proof = self.session_manager.finalize_session(
+                doc,
+                ai_plugins=ai_plugins,
+                tracing_detector=self.event_capture.tracing_detector
+            )
             
             if not proof:
                 from PyQt5.QtWidgets import QMessageBox

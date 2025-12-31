@@ -28,6 +28,7 @@ from krita import Krita
 from PyQt5.QtCore import QTimer, QObject, QEvent, Qt
 from PyQt5.QtWidgets import QOpenGLWidget, QWidget
 import time
+from .tracing_detector import TracingDetector
 
 
 class CanvasEventFilter(QObject):
@@ -180,6 +181,9 @@ class EventCapture:
         # After 2 polls (10 seconds) without changes, stop recording duration
         self.polls_without_change = {}  # doc_id -> int (consecutive polls with no change)
         self.AFK_POLL_THRESHOLD = 2  # 2 polls × 5s = 10 seconds idle before AFK
+        
+        # Tracing Detection: Perceptual hash comparison
+        self.tracing_detector = TracingDetector(debug_log=debug_log)
         
     def start_capture(self):
         """Start capturing events globally"""
@@ -989,11 +993,31 @@ class EventCapture:
                     try:
                         node = doc.nodeByName(layer_name)
                         if node:
+                            layer_type = node.type()
                             session.record_layer_added(
                                 layer_id=str(id(node)),
-                                layer_type=node.type()
+                                layer_type=layer_type
                             )
-                            self._log(f"Layer added: {layer_name} ({node.type()})")
+                            self._log(f"Layer added: {layer_name} ({layer_type})")
+                            
+                            # Check if this is a file layer (imported image)
+                            # File layers have type "filelayer"
+                            if layer_type == "filelayer":
+                                # Record as import
+                                session.record_import(
+                                    file_path=layer_name,  # Use layer name as placeholder
+                                    import_type="file_layer",
+                                    timestamp=time.time()
+                                )
+                                
+                                # Register with tracing detector
+                                self.tracing_detector.register_import(
+                                    doc_id=str(doc_id),
+                                    layer_node=node,
+                                    layer_name=layer_name
+                                )
+                                
+                                self._log(f"[IMPORT] File layer detected: {layer_name}")
                     except Exception as e:
                         self._log(f"Error recording layer: {e}")
         
@@ -1175,6 +1199,11 @@ class EventCapture:
                     
                     if self.DEBUG_LOG:
                         self._log(f"[FLOW-2] ✓ Stroke recorded (session {session.id}, total events: {session.event_count})")
+                    
+                    # Check for tracing (every N strokes for efficiency)
+                    tracing_percentage = self.tracing_detector.check_for_tracing(doc, str(doc_id), session)
+                    if tracing_percentage is not None:
+                        self._log(f"[FLOW-2-TRACE] ⚠️  TRACING DETECTED: {tracing_percentage*100:.1f}%")
                 else:
                     if self.DEBUG_LOG:
                         self._log(f"[FLOW-ERROR] ❌ Could not create or find session for document {doc.name()}!")
