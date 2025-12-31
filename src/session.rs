@@ -402,10 +402,26 @@ impl CHMSession {
     }
 
     /// Get session duration in seconds
-    /// Duration is calculated from event timestamps, not wall-clock time.
-    /// This naturally excludes AFK time when Python layer stops recording events.
+    /// BUG#008 FIX: Duration is calculated from first to last event timestamp.
+    /// This naturally excludes AFK time - duration only increases when events are recorded.
+    /// If no events yet, returns time since session start (bootstrap period).
     pub fn duration_secs(&self) -> i64 {
-        (Utc::now() - self.start_time).num_seconds()
+        if self.events.is_empty() {
+            // No events yet - return time since session creation
+            (Utc::now() - self.start_time).num_seconds()
+        } else {
+            // Calculate duration from first to last event timestamp
+            let first_timestamp = self.events.first()
+                .map(|e| e.timestamp())
+                .unwrap_or(self.start_time.timestamp());
+            
+            let last_timestamp = self.events.last()
+                .map(|e| e.timestamp())
+                .unwrap_or(self.start_time.timestamp());
+            
+            // Duration is the span from first to last event
+            last_timestamp - first_timestamp
+        }
     }
 
     /// Check if session is finalized

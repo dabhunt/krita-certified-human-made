@@ -1244,20 +1244,30 @@ class EventCapture:
         BFROS FIX: Use lightweight thumbnail hash to detect ACTUAL pixel changes.
         The modified() flag is boolean - once True, stays True until save.
         We need to detect when pixels actually change (new strokes).
+        
+        BUG#008 FIX: Enhanced AFK diagnostic logging to reveal detection logic.
         """
+        DEBUG_AFK = True  # Global flag for AFK-specific diagnostic logging
+        
         try:
-            current_modified = doc.modified()
-            previous_modified = self.doc_modified_state.get(doc_id, False)
-            
-            # BFROS: Log EVERY poll to see if modified flag EVER changes
-            if self.DEBUG_LOG:
+            # AFK-DIAG-1: Entry point
+            if DEBUG_AFK and self.DEBUG_LOG:
                 if not hasattr(self, '_mod_poll_count'):
                     self._mod_poll_count = 0
                 self._mod_poll_count += 1
                 
-                # Log every 20 polls to see the modified state
-                if self._mod_poll_count % 20 == 0:
-                    self._log(f"[POLLING-DEBUG] Poll #{self._mod_poll_count}: modified={current_modified}, previous={previous_modified}")
+                # Log every 10 polls for AFK diagnostics
+                if self._mod_poll_count % 10 == 0:
+                    idle_polls = self.polls_without_change.get(doc_id, 0)
+                    is_afk = idle_polls >= self.AFK_POLL_THRESHOLD
+                    self._log(f"[AFK-DIAG-1] === POLL #{self._mod_poll_count} === idle_polls={idle_polls}, is_afk={is_afk}, threshold={self.AFK_POLL_THRESHOLD}")
+            
+            current_modified = doc.modified()
+            previous_modified = self.doc_modified_state.get(doc_id, False)
+            
+            # AFK-DIAG-2: Modified state
+            if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
+                self._log(f"[AFK-DIAG-2] Modified: current={current_modified}, previous={previous_modified}")
             
             # BFROS FIX: Detect ACTUAL content changes using lightweight thumbnail hash
             # This solves the "modified flag stays True" problem
@@ -1267,9 +1277,9 @@ class EventCapture:
             # Only check for changes if document is modified
             if current_modified:
                 try:
-                    # ENHANCED DIAGNOSTIC LOGGING (Step-by-step logic trace)
-                    if self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
-                        self._log(f"[DIAG-1] Doc is modified, checking for actual content changes...")
+                    # AFK-DIAG-3: Document is modified, checking for content changes
+                    if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
+                        self._log(f"[AFK-DIAG-3] Doc is modified, checking for actual content changes...")
                     
                     # Get lightweight hash of document content
                     # Use thumbnail() method - fast and sufficient for change detection
@@ -1278,16 +1288,16 @@ class EventCapture:
                     # Get 100x100 thumbnail (fast to compute)
                     thumbnail = doc.thumbnail(100, 100)
                     
-                    if self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
+                    if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
                         thumb_status = "exists" if thumbnail else "None"
-                        self._log(f"[DIAG-2] Thumbnail retrieved: {thumb_status}")
+                        self._log(f"[AFK-DIAG-4] Thumbnail retrieved: {thumb_status}")
                     
                     if thumbnail:
                         # DIAGNOSTIC: Check if metadata-based hash is actually changing
                         metadata_hash = f"{thumbnail.width()}x{thumbnail.height()}x{thumbnail.byteCount()}"
                         
-                        if self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
-                            self._log(f"[DIAG-3] Thumbnail metadata hash: {metadata_hash}")
+                        if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
+                            self._log(f"[AFK-DIAG-5] Thumbnail metadata: {metadata_hash}")
                         
                         # ACTUAL FIX: Hash the pixel data, not just metadata
                         # Metadata (width/height/byteCount) is CONSTANT for same thumbnail size!
@@ -1303,20 +1313,23 @@ class EventCapture:
                             # Hash the actual pixel content
                             thumbnail_hash = hashlib.md5(thumbnail_bytes).hexdigest()[:16]
                             
-                            if self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
-                                self._log(f"[DIAG-4] Pixel content hash: {thumbnail_hash}")
+                            if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
+                                self._log(f"[AFK-DIAG-6] Pixel content hash: {thumbnail_hash}")
                             
                         except Exception as hash_error:
                             # Fallback to metadata hash if pixel hashing fails
                             thumbnail_hash = metadata_hash
-                            if self.DEBUG_LOG:
-                                self._log(f"[DIAG-4-ERROR] Pixel hash failed, using metadata: {hash_error}")
+                            if DEBUG_AFK and self.DEBUG_LOG:
+                                self._log(f"[AFK-DIAG-6-ERROR] Pixel hash failed, using metadata: {hash_error}")
                         
                         previous_hash = self.doc_content_hash.get(doc_id)
                         
-                        if self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
+                        # AFK-DIAG-7: Hash comparison
+                        if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
                             match_status = "MATCH" if previous_hash == thumbnail_hash else "DIFFERENT"
-                            self._log(f"[DIAG-5] Hash comparison: prev={previous_hash[:16] if previous_hash else 'None'}... vs current={thumbnail_hash[:16]}... → {match_status}")
+                            prev_display = previous_hash[:8] if previous_hash else 'None'
+                            curr_display = thumbnail_hash[:8] if thumbnail_hash else 'None'
+                            self._log(f"[AFK-DIAG-7] Hash comparison: prev={prev_display}... vs curr={curr_display}... → {match_status}")
                         
                         # Detect ACTUAL change in content
                         if previous_hash != thumbnail_hash:
@@ -1325,16 +1338,20 @@ class EventCapture:
                             should_record = True
                             self.doc_content_hash[doc_id] = thumbnail_hash
                             
-                            if self.DEBUG_LOG:
-                                self._log(f"[BFROS-STROKE] ✓ Content CHANGED! New stroke detected (hash changed)")
+                            if DEBUG_AFK and self.DEBUG_LOG:
+                                self._log(f"[AFK-DIAG-8] ✓ CONTENT CHANGED - Stroke detected, AFK counter RESET to 0")
                         else:
                             # Content unchanged - increment AFK counter
-                            self.polls_without_change[doc_id] = self.polls_without_change.get(doc_id, 0) + 1
+                            old_count = self.polls_without_change.get(doc_id, 0)
+                            self.polls_without_change[doc_id] = old_count + 1
+                            new_count = self.polls_without_change[doc_id]
                             
-                            if self.DEBUG_LOG and self._mod_poll_count % 40 == 0:
-                                idle_polls = self.polls_without_change[doc_id]
-                                idle_secs = idle_polls * 5  # 5 seconds per poll
-                                self._log(f"[BFROS-STROKE] Content unchanged (hash identical, idle for {idle_polls} polls = {idle_secs}s)")
+                            # AFK-DIAG-9: Log AFK counter increments (frequent early, then every 10)
+                            if DEBUG_AFK and self.DEBUG_LOG and (new_count <= 5 or new_count % 10 == 0):
+                                idle_secs = new_count * 0.5  # 500ms per poll = 0.5 seconds
+                                is_now_afk = new_count >= self.AFK_POLL_THRESHOLD
+                                afk_status = "AFK" if is_now_afk else "active"
+                                self._log(f"[AFK-DIAG-9] Content unchanged - idle_polls={new_count} ({idle_secs}s idle) - Status: {afk_status}")
                     
                 except Exception as e:
                     # Fallback: If thumbnail fails, use transition detection only
@@ -1351,6 +1368,15 @@ class EventCapture:
                 if self.DEBUG_LOG:
                     self._log(f"[BFROS-STROKE] ✓ Transition detected (False → True)")
             
+            # AFK-DIAG-10: Session duration check (before recording)
+            if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
+                session = self.session_manager.get_session(doc)
+                if session:
+                    duration = session.duration_secs if hasattr(session, 'duration_secs') else 'N/A'
+                    idle_polls = self.polls_without_change.get(doc_id, 0)
+                    is_afk_now = idle_polls >= self.AFK_POLL_THRESHOLD
+                    self._log(f"[AFK-DIAG-10] Session duration={duration}s, idle_polls={idle_polls}, is_afk={is_afk_now}")
+            
             if should_record:
                 import time
                 current_time = time.time()  # BFROS FIX: Define current_time before use
@@ -1361,9 +1387,9 @@ class EventCapture:
                 
                 if was_afk:
                     # User was AFK, now resuming - log the resumption
-                    idle_secs = idle_polls * 5
-                    if self.DEBUG_LOG:
-                        self._log(f"[AFK] ▶️  User resumed after {idle_polls} polls ({idle_secs}s) AFK - duration will resume incrementing")
+                    idle_secs = idle_polls * 0.5  # 500ms per poll
+                    if DEBUG_AFK and self.DEBUG_LOG:
+                        self._log(f"[AFK-DIAG-11] ▶️  User RESUMED after {idle_polls} polls ({idle_secs}s) AFK")
                 
                 session = self.session_manager.get_session(doc)
                 
