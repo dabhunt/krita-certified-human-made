@@ -246,20 +246,38 @@ class CHMSession:
     
     def _classify(self) -> str:
         """
-        Classify the session based on events.
-        Simple classification for fallback implementation.
+        Classify the session based on events and metadata.
+        
+        Classification Logic (Dec 30, 2025):
+        - HumanMade: Pure manual work, references ALLOWED (as long as not traced/visible)
+        - MixedMedia: Imported images visible in final export (but not traced)
+        - AI-Assisted: AI tools detected in metadata
+        - Traced: High % of traced content (>33% edge correlation) - STICKY
         
         Returns:
             Classification string
         """
-        # Check for imports
-        has_imports = any(e.get("type") == "import" for e in self.events)
+        # Priority 1: Check for AI tools in metadata
+        ai_tools_used = self.metadata.get("ai_tools_used", False)
+        if ai_tools_used:
+            return "AI-Assisted"
         
-        # Simple classification logic
-        if has_imports:
-            return "Referenced"  # Has reference images
-        else:
-            return "HumanMade"  # Pure human work
+        # Priority 2: Check for tracing (STICKY - once traced, always traced)
+        tracing_detected = self.metadata.get("tracing_detected", False)
+        if tracing_detected:
+            return "Traced"
+        
+        # Priority 3: Check for visible imports in final export (MixedMedia)
+        # Placeholder heuristic: if imports exist but very few strokes, likely MixedMedia
+        has_imports = any(e.get("type") == "import" for e in self.events)
+        has_strokes = any(e.get("type") == "stroke" for e in self.events)
+        stroke_count = sum(1 for e in self.events if e.get("type") == "stroke")
+        
+        if has_imports and stroke_count < 10:
+            return "MixedMedia"
+        
+        # Default: HumanMade (includes references as long as not traced/visible!)
+        return "HumanMade"
 
 
 # Module-level functions for compatibility with Rust library interface

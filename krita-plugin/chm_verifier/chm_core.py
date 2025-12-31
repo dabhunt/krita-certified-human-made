@@ -252,6 +252,49 @@ class CHMSession:
         """Get session ID"""
         return self.session_id
     
+    def mark_as_traced(self, tracing_percentage: float):
+        """
+        Mark session as traced (STICKY - cannot be undone).
+        
+        Once a session is marked as traced, it cannot be unmarked.
+        This prevents users from gaming the system by editing after tracing.
+        
+        Args:
+            tracing_percentage: Percentage of traced content (0.0-1.0)
+        """
+        if self.finalized:
+            raise RuntimeError("Cannot mark finalized session as traced")
+        
+        # STICKY: Once traced, always traced (even if percentage decreases later)
+        current_traced = self.metadata.get("tracing_detected", False)
+        if not current_traced:
+            self.metadata["tracing_detected"] = True
+            self.metadata["tracing_percentage"] = tracing_percentage
+            print(f"[TRACING] ⚠️  Session marked as TRACED ({tracing_percentage*100:.1f}% traced content)")
+        else:
+            # Already traced, just update percentage if higher
+            old_percentage = self.metadata.get("tracing_percentage", 0.0)
+            if tracing_percentage > old_percentage:
+                self.metadata["tracing_percentage"] = tracing_percentage
+                print(f"[TRACING] ⚠️  Tracing percentage updated: {old_percentage*100:.1f}% → {tracing_percentage*100:.1f}%")
+    
+    def mark_ai_assisted(self, tool_name: str = "Unknown"):
+        """
+        Mark session as AI-assisted.
+        
+        Args:
+            tool_name: Name of AI tool used
+        """
+        if self.finalized:
+            raise RuntimeError("Cannot mark finalized session as AI-assisted")
+        
+        self.metadata["ai_tools_used"] = True
+        ai_tools = self.metadata.get("ai_tools_list", [])
+        if tool_name not in ai_tools:
+            ai_tools.append(tool_name)
+        self.metadata["ai_tools_list"] = ai_tools
+        print(f"[AI-ASSISTED] 🤖 Session marked as AI-Assisted (tool: {tool_name})")
+    
     def finalize(self, artwork_path: Optional[str] = None) -> 'CHMProof':
         """
         Finalize the session and generate a proof summary.
@@ -335,6 +378,8 @@ class CHMSession:
             "events_hash": events_hash,
             "file_hash": file_hash if file_hash else "placeholder_no_artwork_provided",
             "classification": classification,
+            "import_count": import_count,  # Track as separate metric (not part of classification)
+            "tracing_percentage": 0.0,  # Placeholder for future edge detection
             "metadata": self.metadata
         }
         
@@ -389,20 +434,44 @@ class CHMSession:
     
     def _classify(self) -> str:
         """
-        Classify the session based on events.
-        Simple classification for fallback implementation.
+        Classify the session based on events and metadata.
+        
+        Classification Logic (Dec 30, 2025):
+        - HumanMade: Pure manual work, references ALLOWED (as long as not traced/visible)
+        - MixedMedia: Imported images visible in final export (but not traced)
+        - AI-Assisted: AI tools detected in metadata
+        - Traced: High % of traced content (>33% edge correlation) - STICKY
         
         Returns:
             Classification string
         """
-        # Check for imports
-        has_imports = any(e.get("type") == "import" for e in self.events)
+        # Priority 1: Check for AI tools in metadata
+        ai_tools_used = self.metadata.get("ai_tools_used", False)
+        if ai_tools_used:
+            return "AI-Assisted"
         
-        # Simple classification logic
-        if has_imports:
-            return "Referenced"  # Has reference images
-        else:
-            return "HumanMade"  # Pure human work
+        # Priority 2: Check for tracing (STICKY - once traced, always traced)
+        # Note: Edge detection not yet implemented, this is a placeholder
+        tracing_detected = self.metadata.get("tracing_detected", False)
+        if tracing_detected:
+            return "Traced"
+        
+        # Priority 3: Check for visible imports in final export (MixedMedia)
+        # Note: Layer visibility analysis not yet implemented, this is a placeholder
+        # For now, we'll use a heuristic: if imports exist and no strokes, likely MixedMedia
+        has_imports = any(e.get("type") == "import" for e in self.events)
+        has_strokes = any(e.get("type") == "stroke" for e in self.events)
+        
+        # Placeholder heuristic for MixedMedia:
+        # If imports exist but very few strokes (< 10), likely just imported images
+        stroke_count = sum(1 for e in self.events if e.get("type") == "stroke")
+        if has_imports and stroke_count < 10:
+            # Likely just imported images with minimal editing
+            return "MixedMedia"
+        
+        # Default: HumanMade (includes references as long as not traced/visible!)
+        # References are ALLOWED and don't disqualify HumanMade classification
+        return "HumanMade"
 
 
 # Module-level functions for compatibility with Rust library interface

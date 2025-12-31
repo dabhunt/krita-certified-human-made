@@ -76,11 +76,15 @@ class VerificationDialog(QDialog):
         self.duration_label = QLabel("N/A")
         self.events_label = QLabel("N/A")
         self.strokes_label = QLabel("N/A")
+        self.imports_label = QLabel("N/A")
+        self.tracing_label = QLabel("N/A")
         
         session_layout.addRow("Session ID:", self.session_id_label)
         session_layout.addRow("Duration:", self.duration_label)
         session_layout.addRow("Total Events:", self.events_label)
         session_layout.addRow("Brush Strokes:", self.strokes_label)
+        session_layout.addRow("Imported Images:", self.imports_label)
+        session_layout.addRow("Tracing %:", self.tracing_label)
         session_group.setLayout(session_layout)
         layout.addWidget(session_group)
         
@@ -147,13 +151,24 @@ class VerificationDialog(QDialog):
         duration = event_summary.get("session_duration_secs", 0)
         total_events = event_summary.get("total_events", 0)
         stroke_count = event_summary.get("stroke_count", 0)
+        import_count = proof_data.get("import_count", 0)
+        tracing_percentage = proof_data.get("tracing_percentage", 0.0)
         
-        print(f"[FLOW-6] Events: {total_events}, Strokes: {stroke_count}, Duration: {duration}s")
+        print(f"[FLOW-6] Events: {total_events}, Strokes: {stroke_count}, Duration: {duration}s, Imports: {import_count}")
         sys.stdout.flush()
         
         self.duration_label.setText(f"{duration} seconds ({duration // 60}m {duration % 60}s)")
         self.events_label.setText(str(total_events))
         self.strokes_label.setText(str(stroke_count))
+        self.imports_label.setText(f"{import_count} images")
+        
+        # Show tracing percentage (0% if not traced)
+        if tracing_percentage > 0:
+            self.tracing_label.setText(f"{tracing_percentage*100:.1f}%")
+            self.tracing_label.setStyleSheet("color: red; font-weight: bold;")
+        else:
+            self.tracing_label.setText("0% (not traced)")
+            self.tracing_label.setStyleSheet("color: green;")
         
         # Full JSON
         json_str = json.dumps(proof_data, indent=2)
