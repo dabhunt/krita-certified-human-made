@@ -154,7 +154,7 @@ class TracingDetector:
             for paint_layer in paint_layers:
                 # Skip if this IS an import layer
                 paint_layer_id = str(id(paint_layer))
-                if paint_layer_id in self.import_hashes[doc_id]:
+                if paint_layer_id in self.import_hashes[doc_key]:
                     continue
                 
                 # Get paint layer thumbnail
