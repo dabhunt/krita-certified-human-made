@@ -315,7 +315,13 @@ class TracingDetector:
             return False
     
     def _get_paint_layers(self, doc) -> List:
-        """Get all paint layers from document (recursive)"""
+        """
+        Get all paint layers from document (recursive).
+        
+        BUG#006 NOTE: Vector layers not included in tracing detection yet.
+        Tracing detection requires pixel-level comparison, which doesn't apply
+        to vector layers. Future enhancement could rasterize vectors for comparison.
+        """
         paint_layers = []
         
         def traverse(node):

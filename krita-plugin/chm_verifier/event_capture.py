@@ -188,7 +188,8 @@ class EventCapture:
         # BUG#003 FIX: Delayed import detection for paste operations
         # Paste may create layer before pixels are loaded - need delayed check
         self.pending_import_checks = {}  # doc_key -> [(layer_name, check_count)]
-        self.IMPORT_CHECK_DELAY = 3  # Check for 3 polls (1.5 seconds) after layer creation
+        # BUG#006 FIX: Increased timeout for SVG and complex imports
+        self.IMPORT_CHECK_DELAY = 6  # Check for 6 polls (3 seconds) after layer creation
     
     def _get_doc_key(self, doc):
         """
@@ -1035,6 +1036,18 @@ class EventCapture:
                             )
                             self._log(f"[LAYER-ADD] Layer added: {layer_name} (type: {layer_type})")
                             
+                            # BUG#006 FIX: Enhanced diagnostic logging for layer detection
+                            if self.DEBUG_LOG:
+                                try:
+                                    bounds = node.bounds()
+                                    bounds_info = f"{bounds.width()}x{bounds.height()}" if bounds else "None"
+                                    self._log(f"[BUG006-DIAG] Layer: {layer_name}")
+                                    self._log(f"[BUG006-DIAG]   Type: {layer_type}")
+                                    self._log(f"[BUG006-DIAG]   Bounds: {bounds_info}")
+                                    self._log(f"[BUG006-DIAG]   Visible: {node.visible()}")
+                                except Exception as e:
+                                    self._log(f"[BUG006-DIAG] Could not get diagnostics: {e}")
+                            
                             # BFROS FIX: Detect imports by checking if layer has pixel data
                             # Copy-paste creates "paintlayer" with imported pixels, NOT "filelayer"!
                             # We need to detect ANY layer that might contain imported content
@@ -1046,6 +1059,20 @@ class EventCapture:
                                 is_import = True
                                 import_type = "file_layer"
                                 self._log(f"[IMPORT-DETECT] File layer: {layer_name}")
+                            
+                            # BUG#006 FIX: Method 1b - Check if it's a vector layer (SVG, etc.)
+                            elif layer_type == "vectorlayer":
+                                is_import = True
+                                import_type = "vector_layer"
+                                self._log(f"[IMPORT-DETECT] Vector layer: {layer_name}")
+                            
+                            # BUG#006 FIX: Method 1c - Check if it's a group layer (complex imports like SVG)
+                            elif layer_type == "grouplayer":
+                                # Group layers can be created by importing complex files
+                                # Check if the group name suggests it's an import
+                                is_import = True
+                                import_type = "group_layer"
+                                self._log(f"[IMPORT-DETECT] Group layer (possible import): {layer_name}")
                             
                             # Method 2: Check if it's a paint layer with suspicious characteristics
                             # (likely pasted image)
@@ -1078,6 +1105,23 @@ class EventCapture:
                                         })
                                 except Exception as e:
                                     self._log(f"[IMPORT-DETECT] Could not check bounds: {e}")
+                            
+                            # BUG#006 FIX: Method 3 - Extension-based fallback detection
+                            # If not detected by layer type, check layer name for image extensions
+                            if not is_import:
+                                IMPORT_EXTENSIONS = [
+                                    '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', 
+                                    '.bmp', '.tif', '.tiff', '.psd', '.ora', '.exr'
+                                ]
+                                layer_lower = layer_name.lower()
+                                
+                                for ext in IMPORT_EXTENSIONS:
+                                    if ext in layer_lower:
+                                        is_import = True
+                                        import_type = "file_import_by_extension"
+                                        if self.DEBUG_LOG:
+                                            self._log(f"[IMPORT-DETECT] Import detected by extension '{ext}' in name: {layer_name}")
+                                        break
                             
                             # If detected as import, record it
                             if is_import:
