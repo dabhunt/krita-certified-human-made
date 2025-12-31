@@ -136,21 +136,22 @@ class CHMSessionManager:
                 if hasattr(session_to_finalize, 'record_plugin_used'):
                     session_to_finalize.record_plugin_used(plugin_name, plugin_type)
         
+        # BUG#005 FIX: Use doc_key (session key) instead of doc_id
         # Finalize with artwork path for dual-hash computation
-        doc_id = str(id(document))
+        doc_key = self._get_document_key(document)
         if artwork_path:
             self._log(f"[FINALIZE-4] Computing file hash for: {artwork_path}")
             proof = session_to_finalize.finalize(
                 artwork_path=artwork_path,
                 doc=document,
-                doc_id=doc_id,
+                doc_key=doc_key,
                 tracing_detector=tracing_detector
             )
         else:
             self._log(f"[FINALIZE-4] No artwork path (using placeholder hashes)")
             proof = session_to_finalize.finalize(
                 doc=document,
-                doc_id=doc_id,
+                doc_key=doc_key,
                 tracing_detector=tracing_detector
             )
         

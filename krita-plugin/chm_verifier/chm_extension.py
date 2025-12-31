@@ -532,7 +532,8 @@ class CHMExtension(Extension):
             return
         
         # Get comprehensive session info (without finalizing)
-        doc_id = str(id(doc))
+        # BUG#005 FIX: Use doc_key (session key) instead of doc_id
+        doc_key = self.event_capture._get_doc_key(doc)
         
         # Count events by type
         stroke_count = sum(1 for e in session.events if e.get("type") == "stroke")
@@ -542,7 +543,7 @@ class CHMExtension(Extension):
         # Get current classification (preview - not finalized)
         classification = session._classify(
             doc=doc,
-            doc_id=doc_id,
+            doc_key=doc_key,
             tracing_detector=self.event_capture.tracing_detector
         )
         
@@ -557,7 +558,7 @@ class CHMExtension(Extension):
         # Check if imports are visible (MixedMedia check)
         mixed_media_check = ""
         if import_count > 0:
-            is_mixed = self.event_capture.tracing_detector.check_mixed_media(doc, doc_id)
+            is_mixed = self.event_capture.tracing_detector.check_mixed_media(doc, doc_key)
             mixed_media_check = f"\nImports Visible: {'Yes (MixedMedia)' if is_mixed else 'No (Hidden references)'}"
         
         # Build comprehensive info message

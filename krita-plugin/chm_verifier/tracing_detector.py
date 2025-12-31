@@ -41,16 +41,21 @@ class TracingDetector:
     
     def __init__(self, debug_log: bool = True):
         self.DEBUG_LOG = debug_log
-        self.import_hashes = {}  # doc_id -> {layer_id: phash}
-        self.stroke_count_since_check = {}  # doc_id -> int
-        self.traced_documents = set()  # doc_ids that are traced (STICKY)
+        # BUG#005 FIX: Use doc_key (not doc_id) to match session manager
+        # This prevents data loss during session migration (unsaved → saved)
+        self.import_hashes = {}  # doc_key -> {layer_id: phash}
+        self.stroke_count_since_check = {}  # doc_key -> int
+        self.traced_documents = set()  # doc_keys that are traced (STICKY)
         
-    def register_import(self, doc_id: str, layer_node, layer_name: str):
+    def register_import(self, doc_key: str, layer_node, layer_name: str):
         """
         Register an imported image layer for tracing detection.
         
+        BUG#005 FIX: Uses doc_key (session key) instead of doc_id (Python object ID)
+        to ensure data persists across session migration.
+        
         Args:
-            doc_id: Document identifier
+            doc_key: Document key (from session manager, e.g., filepath or unsaved_ID)
             layer_node: Krita layer node
             layer_name: Layer name for logging
         """
@@ -74,11 +79,11 @@ class TracingDetector:
                 return
             
             # Store hash
-            if doc_id not in self.import_hashes:
-                self.import_hashes[doc_id] = {}
+            if doc_key not in self.import_hashes:
+                self.import_hashes[doc_key] = {}
             
             layer_id = str(id(layer_node))
-            self.import_hashes[doc_id][layer_id] = {
+            self.import_hashes[doc_key][layer_id] = {
                 'phash': phash,
                 'layer_name': layer_name,
                 'layer_node': layer_node
@@ -92,43 +97,45 @@ class TracingDetector:
             import traceback
             self._log(f"[TRACE-REG] Traceback: {traceback.format_exc()}")
     
-    def check_for_tracing(self, doc, doc_id: str, session) -> Optional[float]:
+    def check_for_tracing(self, doc, doc_key: str, session) -> Optional[float]:
         """
         Check if current document shows signs of tracing.
         
         Called periodically (every N strokes) to minimize performance impact.
         
+        BUG#005 FIX: Uses doc_key instead of doc_id for consistency.
+        
         Args:
             doc: Krita document
-            doc_id: Document identifier
+            doc_key: Document key (from session manager)
             session: CHM session
             
         Returns:
             Tracing percentage (0.0-1.0) if traced, None otherwise
         """
         # Skip if already marked as traced (STICKY)
-        if doc_id in self.traced_documents:
+        if doc_key in self.traced_documents:
             return None
         
         # Skip if no imports registered
-        if doc_id not in self.import_hashes or not self.import_hashes[doc_id]:
+        if doc_key not in self.import_hashes or not self.import_hashes[doc_key]:
             return None
         
         # Increment stroke count
-        if doc_id not in self.stroke_count_since_check:
-            self.stroke_count_since_check[doc_id] = 0
+        if doc_key not in self.stroke_count_since_check:
+            self.stroke_count_since_check[doc_key] = 0
         
-        self.stroke_count_since_check[doc_id] += 1
+        self.stroke_count_since_check[doc_key] += 1
         
         # Only check every N strokes (efficiency)
-        if self.stroke_count_since_check[doc_id] < CHECK_FREQUENCY:
+        if self.stroke_count_since_check[doc_key] < CHECK_FREQUENCY:
             return None
         
         # Reset counter
-        self.stroke_count_since_check[doc_id] = 0
+        self.stroke_count_since_check[doc_key] = 0
         
         if self.DEBUG_LOG:
-            self._log(f"[TRACE-CHECK] Checking for tracing (imports: {len(self.import_hashes[doc_id])})")
+            self._log(f"[TRACE-CHECK] Checking for tracing (imports: {len(self.import_hashes[doc_key])})")
         
         try:
             # Get all paint layers (where user draws)
@@ -161,7 +168,7 @@ class TracingDetector:
                     continue
                 
                 # Compare against all import hashes
-                for import_id, import_data in self.import_hashes[doc_id].items():
+                for import_id, import_data in self.import_hashes[doc_key].items():
                     import_phash = import_data['phash']
                     similarity = self._compare_hashes(paint_phash, import_phash)
                     
@@ -176,7 +183,7 @@ class TracingDetector:
             # Check if exceeds threshold
             if max_similarity >= TRACING_THRESHOLD:
                 # TRACED! Mark as sticky
-                self.traced_documents.add(doc_id)
+                self.traced_documents.add(doc_key)
                 session.mark_as_traced(max_similarity)
                 
                 if self.DEBUG_LOG:
@@ -195,30 +202,32 @@ class TracingDetector:
             self._log(f"[TRACE-CHECK] Traceback: {traceback.format_exc()}")
             return None
     
-    def check_mixed_media(self, doc, doc_id: str) -> bool:
+    def check_mixed_media(self, doc, doc_key: str) -> bool:
         """
         Check if imported images are visible in final export (MixedMedia).
         
+        BUG#005 FIX: Uses doc_key instead of doc_id for consistency.
+        
         Args:
             doc: Krita document
-            doc_id: Document identifier
+            doc_key: Document key (from session manager)
             
         Returns:
             True if imports are visible, False otherwise
         """
         # Skip if no imports
-        if doc_id not in self.import_hashes or not self.import_hashes[doc_id]:
+        if doc_key not in self.import_hashes or not self.import_hashes[doc_key]:
             if self.DEBUG_LOG:
-                self._log(f"[MIXED-MEDIA] No imports registered for doc_id: {doc_id}")
+                self._log(f"[MIXED-MEDIA] No imports registered for doc_key: {doc_key}")
             return False
         
         if self.DEBUG_LOG:
-            self._log(f"[MIXED-MEDIA] Checking {len(self.import_hashes[doc_id])} registered imports")
+            self._log(f"[MIXED-MEDIA] Checking {len(self.import_hashes[doc_key])} registered imports")
         
         try:
             # BUG#004 FIX: Re-fetch layers by name instead of using stored references
             # Stored layer_node references may become stale
-            for import_id, import_data in self.import_hashes[doc_id].items():
+            for import_id, import_data in self.import_hashes[doc_key].items():
                 layer_name = import_data['layer_name']
                 
                 if self.DEBUG_LOG:

@@ -295,7 +295,7 @@ class CHMSession:
         self.metadata["ai_tools_list"] = ai_tools
         print(f"[AI-ASSISTED] 🤖 Session marked as AI-Assisted (tool: {tool_name})")
     
-    def finalize(self, artwork_path: Optional[str] = None, doc=None, doc_id: Optional[str] = None, tracing_detector=None) -> 'CHMProof':
+    def finalize(self, artwork_path: Optional[str] = None, doc=None, doc_key: Optional[str] = None, tracing_detector=None) -> 'CHMProof':
         """
         Finalize the session and generate a proof summary.
         
@@ -354,8 +354,9 @@ class CHMSession:
             print(f"[FLOW-3c-DUAL] ℹ️ No artwork path provided, using placeholder hashes")
             sys.stdout.flush()
         
+        # BUG#005 FIX: Pass doc_key instead of doc_id
         # Classify session (pass tracing detector for MixedMedia check)
-        classification = self._classify(doc=doc, doc_id=doc_id, tracing_detector=tracing_detector)
+        classification = self._classify(doc=doc, doc_key=doc_key, tracing_detector=tracing_detector)
         
         print(f"[FLOW-3d] 🏷️ Classification: {classification}")
         sys.stdout.flush()
@@ -432,7 +433,7 @@ class CHMSession:
         
         return snapshot
     
-    def _classify(self, doc=None, doc_id: Optional[str] = None, tracing_detector=None) -> str:
+    def _classify(self, doc=None, doc_key: Optional[str] = None, tracing_detector=None) -> str:
         """
         Classify the session based on events and metadata.
         
@@ -442,9 +443,11 @@ class CHMSession:
         - AI-Assisted: AI tools detected in metadata
         - Traced: High % of traced content (>33% edge correlation) - STICKY
         
+        BUG#005 FIX: Uses doc_key (session key) instead of doc_id for consistency.
+        
         Args:
             doc: Krita document (optional, for MixedMedia detection)
-            doc_id: Document ID (optional, for MixedMedia detection)
+            doc_key: Document key from session manager (optional, for MixedMedia detection)
             tracing_detector: TracingDetector instance (optional, for MixedMedia detection)
         
         Returns:
@@ -465,8 +468,8 @@ class CHMSession:
         
         if has_imports:
             # Use tracing detector to check if imports are visible
-            if tracing_detector and doc and doc_id:
-                is_mixed_media = tracing_detector.check_mixed_media(doc, doc_id)
+            if tracing_detector and doc and doc_key:
+                is_mixed_media = tracing_detector.check_mixed_media(doc, doc_key)
                 if is_mixed_media:
                     return "MixedMedia"
             else:

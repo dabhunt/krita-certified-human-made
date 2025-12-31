@@ -187,8 +187,23 @@ class EventCapture:
         
         # BUG#003 FIX: Delayed import detection for paste operations
         # Paste may create layer before pixels are loaded - need delayed check
-        self.pending_import_checks = {}  # doc_id -> [(layer_name, check_count)]
+        self.pending_import_checks = {}  # doc_key -> [(layer_name, check_count)]
         self.IMPORT_CHECK_DELAY = 3  # Check for 3 polls (1.5 seconds) after layer creation
+    
+    def _get_doc_key(self, doc):
+        """
+        BUG#005 FIX: Get consistent document key (DRY with session manager).
+        
+        This ensures tracing detector and session manager use the SAME key,
+        preventing data loss during session migration (unsaved → saved).
+        
+        Args:
+            doc: Krita document
+            
+        Returns:
+            str: Document key (filepath or unsaved_ID)
+        """
+        return self.session_manager._get_document_key(doc)
         
     def start_capture(self):
         """Start capturing events globally"""
@@ -1050,10 +1065,13 @@ class EventCapture:
                                         # Add to pending checks for delayed verification
                                         self._log(f"[IMPORT-DETECT] Paint layer with no bounds yet: {layer_name} - adding to pending checks")
                                         
-                                        if doc_id not in self.pending_import_checks:
-                                            self.pending_import_checks[doc_id] = []
+                                        # BUG#005 FIX: Use doc_key for pending checks
+                                        doc_key = self._get_doc_key(doc)
                                         
-                                        self.pending_import_checks[doc_id].append({
+                                        if doc_key not in self.pending_import_checks:
+                                            self.pending_import_checks[doc_key] = []
+                                        
+                                        self.pending_import_checks[doc_key].append({
                                             'layer_name': layer_name,
                                             'node': node,
                                             'checks_remaining': self.IMPORT_CHECK_DELAY
@@ -1070,9 +1088,12 @@ class EventCapture:
                                     timestamp=time.time()
                                 )
                                 
+                                # BUG#005 FIX: Use doc_key instead of doc_id
+                                doc_key = self._get_doc_key(doc)
+                                
                                 # Register with tracing detector
                                 self.tracing_detector.register_import(
-                                    doc_id=str(doc_id),
+                                    doc_key=doc_key,
                                     layer_node=node,
                                     layer_name=layer_name
                                 )
@@ -1089,14 +1110,18 @@ class EventCapture:
     def poll_pending_imports(self, doc, doc_id):
         """
         BUG#003 FIX: Check pending import detections (delayed paste detection).
+        BUG#005 FIX: Uses doc_key for consistency with session manager.
         
         Paste operations may create layers before pixels are loaded.
         This method re-checks layers after a delay to catch late-loading content.
         """
-        if doc_id not in self.pending_import_checks:
+        # BUG#005 FIX: Use doc_key instead of doc_id
+        doc_key = self._get_doc_key(doc)
+        
+        if doc_key not in self.pending_import_checks:
             return
         
-        pending = self.pending_import_checks[doc_id]
+        pending = self.pending_import_checks[doc_key]
         if not pending:
             return
         
@@ -1133,9 +1158,12 @@ class EventCapture:
                         timestamp=time.time()
                     )
                     
+                    # BUG#005 FIX: Use doc_key instead of doc_id
+                    doc_key = self._get_doc_key(doc)
+                    
                     # Register with tracing detector
                     self.tracing_detector.register_import(
-                        doc_id=str(doc_id),
+                        doc_key=doc_key,
                         layer_node=current_node,
                         layer_name=layer_name
                     )
@@ -1162,7 +1190,7 @@ class EventCapture:
                 self._log(f"[IMPORT-PENDING] Error checking {layer_name}: {e}")
         
         # Update pending list
-        self.pending_import_checks[doc_id] = still_pending
+        self.pending_import_checks[doc_key] = still_pending
     
     def poll_document_modification(self, doc, doc_id):
         """
@@ -1340,8 +1368,11 @@ class EventCapture:
                     if self.DEBUG_LOG:
                         self._log(f"[FLOW-2] ✓ Stroke recorded (session {session.id}, total events: {session.event_count})")
                     
+                    # BUG#005 FIX: Use doc_key instead of doc_id
+                    doc_key = self._get_doc_key(doc)
+                    
                     # Check for tracing (every N strokes for efficiency)
-                    tracing_percentage = self.tracing_detector.check_for_tracing(doc, str(doc_id), session)
+                    tracing_percentage = self.tracing_detector.check_for_tracing(doc, doc_key, session)
                     if tracing_percentage is not None:
                         self._log(f"[FLOW-2-TRACE] ⚠️  TRACING DETECTED: {tracing_percentage*100:.1f}%")
                 else:
