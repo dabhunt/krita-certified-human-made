@@ -1,23 +1,27 @@
 """
 Tracing Detection Module
 
-Pure Python implementation of perceptual hashing for tracing detection.
+Pure Python implementation of hybrid tracing detection.
 No external libraries - uses only Krita API + Python stdlib.
 
-Approach: Perceptual Hash Comparison 
-- Harder to game than simple edge detection
+Approach: Hybrid Two-Stage Detection
+- Stage 1: Fast perceptual hash for structural similarity
+- Stage 2: Pixel-level analysis for accurate percentage
 - Efficient: Only checks when drawing over import layers
 - Minimal performance impact: Runs periodically, not every stroke
 
 Algorithm:
 1. When import detected: Store perceptual hash of imported image
 2. Periodically (every 10 strokes): Check if current layer resembles import
-3. If similarity > 33%: Mark as traced (STICKY)
+3. Stage 1 - Structural check: If perceptual hash similarity > 33%, proceed to Stage 2
+4. Stage 2 - Pixel analysis: Calculate actual % of painted pixels that match import
+5. If pixel-level tracing > 33%: Mark as traced (STICKY)
 
 Perceptual Hash Implementation:
-- Resize to 8x8 grayscale
+- Configurable resolution (default 16x16 for balance)
+- Convert to grayscale
 - Compute average pixel value
-- Generate 64-bit hash (1 if pixel > average, 0 otherwise)
+- Generate hash (1 if pixel > average, 0 otherwise)
 - Compare hashes using Hamming distance
 """
 
@@ -29,8 +33,19 @@ from PyQt5.QtCore import QByteArray, QBuffer, QIODevice
 
 DEBUG_LOG = True
 
+# Perceptual hash resolution (higher = more detail, but slower)
+# 8x8 = 64-bit hash (fast, coarse)
+# 16x16 = 256-bit hash (balanced, recommended)
+# 32x32 = 1024-bit hash (detailed, slower)
+PHASH_RESOLUTION = 16
+
 # Tracing threshold: >33% similarity = traced
-TRACING_THRESHOLD = 0.33
+# This is for structural similarity (perceptual hash comparison)
+STRUCTURAL_SIMILARITY_THRESHOLD = 0.33
+
+# Pixel-level tracing threshold: >33% of painted pixels match import
+# This is calculated only when structural similarity is detected
+PIXEL_TRACING_THRESHOLD = 0.33
 
 # Check frequency: Every N strokes
 CHECK_FREQUENCY = 10
@@ -146,10 +161,11 @@ class TracingDetector:
                     self._log(f"[TRACE-CHECK] No paint layers found")
                 return None
             
-            # Check each paint layer against import layers
-            max_similarity = 0.0
-            traced_layer = None
-            import_layer = None
+            # STAGE 1: Structural similarity check (fast perceptual hash)
+            max_structural_similarity = 0.0
+            suspected_paint_layer = None
+            suspected_import_layer_data = None
+            suspected_import_layer_name = None
             
             for paint_layer in paint_layers:
                 # Skip if this IS an import layer
@@ -172,27 +188,63 @@ class TracingDetector:
                     import_phash = import_data['phash']
                     similarity = self._compare_hashes(paint_phash, import_phash)
                     
-                    if similarity > max_similarity:
-                        max_similarity = similarity
-                        traced_layer = paint_layer.name()
-                        import_layer = import_data['layer_name']
+                    if similarity > max_structural_similarity:
+                        max_structural_similarity = similarity
+                        suspected_paint_layer = paint_layer
+                        suspected_import_layer_data = import_data
+                        suspected_import_layer_name = import_data['layer_name']
             
             if self.DEBUG_LOG:
-                self._log(f"[TRACE-CHECK] Max similarity: {max_similarity*100:.1f}%")
+                self._log(f"[STAGE-1] Structural similarity: {max_structural_similarity*100:.1f}%")
             
-            # Check if exceeds threshold
-            if max_similarity >= TRACING_THRESHOLD:
-                # TRACED! Mark as sticky
-                self.traced_documents.add(doc_key)
-                session.mark_as_traced(max_similarity)
+            # Check if structural similarity exceeds threshold
+            if max_structural_similarity >= STRUCTURAL_SIMILARITY_THRESHOLD:
+                if self.DEBUG_LOG:
+                    self._log(f"[STAGE-1] ⚠️  Structural similarity detected!")
+                    self._log(f"[STAGE-1]   Paint layer: {suspected_paint_layer.name()}")
+                    self._log(f"[STAGE-1]   Import layer: {suspected_import_layer_name}")
+                    self._log(f"[STAGE-1]   Proceeding to Stage 2: Pixel-level analysis...")
+                
+                # STAGE 2: Pixel-level verification (accurate percentage)
+                # Re-fetch import layer to ensure fresh reference
+                import_layer_node = doc.nodeByName(suspected_import_layer_name)
+                if not import_layer_node:
+                    if self.DEBUG_LOG:
+                        self._log(f"[STAGE-2] ⚠️  Could not re-fetch import layer: {suspected_import_layer_name}")
+                    return None
+                
+                pixel_tracing_percentage = self._calculate_pixel_tracing_percentage(
+                    suspected_paint_layer,
+                    import_layer_node
+                )
+                
+                if pixel_tracing_percentage is None:
+                    if self.DEBUG_LOG:
+                        self._log(f"[STAGE-2] ⚠️  Pixel analysis failed, using structural similarity only")
+                    pixel_tracing_percentage = max_structural_similarity
                 
                 if self.DEBUG_LOG:
-                    self._log(f"[TRACE-CHECK] ⚠️  TRACING DETECTED!")
-                    self._log(f"[TRACE-CHECK]   Paint layer: {traced_layer}")
-                    self._log(f"[TRACE-CHECK]   Import layer: {import_layer}")
-                    self._log(f"[TRACE-CHECK]   Similarity: {max_similarity*100:.1f}%")
+                    self._log(f"[STAGE-2] Pixel-level tracing: {pixel_tracing_percentage*100:.1f}%")
                 
-                return max_similarity
+                # Check if pixel-level tracing exceeds threshold
+                if pixel_tracing_percentage >= PIXEL_TRACING_THRESHOLD:
+                    # TRACED! Mark as sticky
+                    self.traced_documents.add(doc_key)
+                    session.mark_as_traced(pixel_tracing_percentage)
+                    
+                    if self.DEBUG_LOG:
+                        self._log(f"[TRACE-DETECTED] 🚨 TRACING CONFIRMED!")
+                        self._log(f"[TRACE-DETECTED]   Paint layer: {suspected_paint_layer.name()}")
+                        self._log(f"[TRACE-DETECTED]   Import layer: {suspected_import_layer_name}")
+                        self._log(f"[TRACE-DETECTED]   Structural similarity: {max_structural_similarity*100:.1f}%")
+                        self._log(f"[TRACE-DETECTED]   Pixel-level tracing: {pixel_tracing_percentage*100:.1f}%")
+                    
+                    return pixel_tracing_percentage
+                else:
+                    if self.DEBUG_LOG:
+                        self._log(f"[STAGE-2] ✓ Structural similarity high, but pixel-level tracing below threshold")
+                        self._log(f"[STAGE-2]   (This may be coincidental composition, not actual tracing)")
+                    return None
             
             return None
             
@@ -285,24 +337,24 @@ class TracingDetector:
         Compute perceptual hash (pHash) of image.
         
         Pure Python implementation:
-        1. Resize to 8x8 grayscale
+        1. Resize to NxN grayscale (configurable, default 16x16)
         2. Compute average pixel value
-        3. Generate 64-bit hash (1 if pixel > average, 0 otherwise)
+        3. Generate hash (1 if pixel > average, 0 otherwise)
         
         Args:
             qimage: QImage to hash
             
         Returns:
-            64-character hex string (256-bit hash for better accuracy)
+            Hex string representing the hash
         """
         try:
-            # Resize to 8x8 for perceptual hash
-            small = qimage.scaled(8, 8)
+            # Resize using configured resolution
+            small = qimage.scaled(PHASH_RESOLUTION, PHASH_RESOLUTION)
             
             # Convert to grayscale and get pixel values
             pixels = []
-            for y in range(8):
-                for x in range(8):
+            for y in range(PHASH_RESOLUTION):
+                for x in range(PHASH_RESOLUTION):
                     # Get pixel color
                     pixel = small.pixel(x, y)
                     
@@ -326,7 +378,9 @@ class TracingDetector:
             # Convert to hex string
             hash_str = ''.join(hash_bits)
             hash_int = int(hash_str, 2)
-            hash_hex = format(hash_int, '016x')  # 64-bit hash
+            # Calculate hex length based on resolution (e.g., 16x16 = 256 bits = 64 hex chars)
+            hex_length = (PHASH_RESOLUTION * PHASH_RESOLUTION) // 4
+            hash_hex = format(hash_int, f'0{hex_length}x')
             
             return hash_hex
             
@@ -356,8 +410,8 @@ class TracingDetector:
             # Count differing bits (Hamming distance)
             hamming_distance = bin(xor).count('1')
             
-            # Convert to similarity (0 = identical, 64 = completely different)
-            max_distance = 64  # 64-bit hash
+            # Convert to similarity (0 = identical, max_distance = completely different)
+            max_distance = PHASH_RESOLUTION * PHASH_RESOLUTION  # Total bits in hash
             similarity = 1.0 - (hamming_distance / max_distance)
             
             return similarity
@@ -365,6 +419,104 @@ class TracingDetector:
         except Exception as e:
             self._log(f"[PHASH] ❌ Error comparing hashes: {e}")
             return 0.0
+    
+    def _calculate_pixel_tracing_percentage(self, paint_layer, import_layer) -> Optional[float]:
+        """
+        Calculate the actual percentage of painted pixels that match the import layer.
+        
+        This is Stage 2 verification - only called when structural similarity is detected.
+        
+        Args:
+            paint_layer: Krita paint layer node
+            import_layer: Krita import layer node
+            
+        Returns:
+            Percentage of painted pixels that match import (0.0-1.0), or None on error
+        """
+        try:
+            if self.DEBUG_LOG:
+                self._log(f"[PIXEL-TRACE] Starting pixel-level analysis...")
+            
+            # Get full-resolution thumbnails for comparison
+            # Use larger thumbnails for better accuracy (but not full size for performance)
+            comparison_size = 512
+            paint_thumb = paint_layer.thumbnail(comparison_size, comparison_size)
+            import_thumb = import_layer.thumbnail(comparison_size, comparison_size)
+            
+            if not paint_thumb or not import_thumb:
+                self._log(f"[PIXEL-TRACE] ⚠️  Could not get thumbnails")
+                return None
+            
+            # Make sure they're the same size
+            if paint_thumb.width() != import_thumb.width() or paint_thumb.height() != import_thumb.height():
+                self._log(f"[PIXEL-TRACE] ⚠️  Thumbnail size mismatch")
+                return None
+            
+            width = paint_thumb.width()
+            height = paint_thumb.height()
+            
+            # Count painted pixels and matching pixels
+            painted_pixels = 0
+            matching_pixels = 0
+            
+            # Color similarity threshold (allow slight variations)
+            # Pixels within this distance are considered "matching"
+            color_threshold = 30  # RGB distance (0-255 per channel)
+            
+            for y in range(height):
+                for x in range(width):
+                    # Get paint layer pixel
+                    paint_pixel = paint_thumb.pixel(x, y)
+                    paint_alpha = (paint_pixel >> 24) & 0xFF
+                    
+                    # Skip transparent pixels (not painted)
+                    if paint_alpha < 128:  # Less than 50% opacity = not painted
+                        continue
+                    
+                    painted_pixels += 1
+                    
+                    # Get import layer pixel at same position
+                    import_pixel = import_thumb.pixel(x, y)
+                    
+                    # Extract RGB from both
+                    paint_r = (paint_pixel >> 16) & 0xFF
+                    paint_g = (paint_pixel >> 8) & 0xFF
+                    paint_b = paint_pixel & 0xFF
+                    
+                    import_r = (import_pixel >> 16) & 0xFF
+                    import_g = (import_pixel >> 8) & 0xFF
+                    import_b = import_pixel & 0xFF
+                    
+                    # Calculate color distance (Euclidean distance in RGB space)
+                    r_diff = paint_r - import_r
+                    g_diff = paint_g - import_g
+                    b_diff = paint_b - import_b
+                    color_distance = (r_diff * r_diff + g_diff * g_diff + b_diff * b_diff) ** 0.5
+                    
+                    # Check if colors match within threshold
+                    if color_distance <= color_threshold:
+                        matching_pixels += 1
+            
+            # Calculate percentage
+            if painted_pixels == 0:
+                if self.DEBUG_LOG:
+                    self._log(f"[PIXEL-TRACE] No painted pixels found")
+                return 0.0
+            
+            tracing_percentage = matching_pixels / painted_pixels
+            
+            if self.DEBUG_LOG:
+                self._log(f"[PIXEL-TRACE] Painted pixels: {painted_pixels}")
+                self._log(f"[PIXEL-TRACE] Matching pixels: {matching_pixels}")
+                self._log(f"[PIXEL-TRACE] Tracing percentage: {tracing_percentage*100:.1f}%")
+            
+            return tracing_percentage
+            
+        except Exception as e:
+            self._log(f"[PIXEL-TRACE] ❌ Error calculating pixel tracing: {e}")
+            import traceback
+            self._log(f"[PIXEL-TRACE] Traceback: {traceback.format_exc()}")
+            return None
     
     def _log(self, message: str):
         """Debug logging helper"""
