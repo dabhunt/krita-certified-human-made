@@ -970,8 +970,20 @@ class EventCapture:
         """Poll for layer changes"""
         try:
             current_layers = set()
+            all_nodes = []  # BFROS: Track all nodes for debugging
             for node in doc.topLevelNodes():
                 current_layers.add(node.name())
+                all_nodes.append((node.name(), node.type()))
+            
+            # BFROS: Log all layers periodically for debugging
+            if self.DEBUG_LOG and not hasattr(self, '_layer_debug_count'):
+                self._layer_debug_count = 0
+            if self.DEBUG_LOG:
+                self._layer_debug_count += 1
+                if self._layer_debug_count % 20 == 0:  # Every 20 polls
+                    self._log(f"[LAYER-DEBUG] Total layers: {len(all_nodes)}")
+                    for name, ltype in all_nodes:
+                        self._log(f"[LAYER-DEBUG]   - {name} (type: {ltype})")
         except Exception as e:
             self._log(f"Error polling layers: {e}")
             return
@@ -998,15 +1010,44 @@ class EventCapture:
                                 layer_id=str(id(node)),
                                 layer_type=layer_type
                             )
-                            self._log(f"Layer added: {layer_name} ({layer_type})")
+                            self._log(f"[LAYER-ADD] Layer added: {layer_name} (type: {layer_type})")
                             
-                            # Check if this is a file layer (imported image)
-                            # File layers have type "filelayer"
+                            # BFROS FIX: Detect imports by checking if layer has pixel data
+                            # Copy-paste creates "paintlayer" with imported pixels, NOT "filelayer"!
+                            # We need to detect ANY layer that might contain imported content
+                            is_import = False
+                            import_type = "unknown"
+                            
+                            # Method 1: Check if it's a file layer (File → Import Layer)
                             if layer_type == "filelayer":
+                                is_import = True
+                                import_type = "file_layer"
+                                self._log(f"[IMPORT-DETECT] File layer: {layer_name}")
+                            
+                            # Method 2: Check if it's a paint layer with suspicious characteristics
+                            # (likely pasted image)
+                            elif layer_type == "paintlayer":
+                                # Check if layer has pixel data (non-empty)
+                                # Pasted images create paint layers with full pixel data
+                                try:
+                                    # Get layer bounds to see if it has content
+                                    bounds = node.bounds()
+                                    if bounds and bounds.width() > 0 and bounds.height() > 0:
+                                        # Layer has content - check if it's likely imported
+                                        # Heuristic: If layer appears immediately with content, likely paste
+                                        # (vs gradual drawing which would be strokes)
+                                        is_import = True
+                                        import_type = "paste_or_import"
+                                        self._log(f"[IMPORT-DETECT] Paint layer with content: {layer_name} ({bounds.width()}x{bounds.height()})")
+                                except Exception as e:
+                                    self._log(f"[IMPORT-DETECT] Could not check bounds: {e}")
+                            
+                            # If detected as import, record it
+                            if is_import:
                                 # Record as import
                                 session.record_import(
                                     file_path=layer_name,  # Use layer name as placeholder
-                                    import_type="file_layer",
+                                    import_type=import_type,
                                     timestamp=time.time()
                                 )
                                 
@@ -1017,9 +1058,11 @@ class EventCapture:
                                     layer_name=layer_name
                                 )
                                 
-                                self._log(f"[IMPORT] File layer detected: {layer_name}")
+                                self._log(f"[IMPORT] ✓ Import detected: {layer_name} (type: {import_type})")
                     except Exception as e:
-                        self._log(f"Error recording layer: {e}")
+                        self._log(f"[LAYER-ADD] Error recording layer: {e}")
+                        import traceback
+                        self._log(f"[LAYER-ADD] Traceback: {traceback.format_exc()}")
         
         # Update cache
         self.layer_cache[doc_id] = current_layers
