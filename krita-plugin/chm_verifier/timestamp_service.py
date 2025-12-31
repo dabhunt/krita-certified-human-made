@@ -20,7 +20,7 @@ from datetime import datetime
 class TripleTimestampService:
     """Service for timestamping proof hashes via three independent sources"""
     
-    def __init__(self, config=None, debug_log=False):
+    def __init__(self, config=None, debug_log=False, logger_func=None):
         """
         Initialize timestamp service.
         
@@ -31,14 +31,27 @@ class TripleTimestampService:
                 - enable_wayback: bool (default False for MVP)
                 - enable_chm_log: bool (default True)
             debug_log: bool - enable debug logging
+            logger_func: callable - custom logging function (optional, defaults to print)
         """
         self.config = config or {}
         self.debug_log = debug_log
+        self.logger_func = logger_func  # Custom logger (e.g., CHM's _debug_log)
+        
+        self._log("[TIMESTAMP-INIT] === Initializing Timestamp Service ===")
+        self._log(f"[TIMESTAMP-INIT] Config received: {self.config}")
+        self._log(f"[TIMESTAMP-INIT] Debug logging: {self.debug_log}")
         
         self.github_token = self.config.get('github_token')
         self.enable_github = self.config.get('enable_github', True)
         self.enable_wayback = self.config.get('enable_wayback', False)  # Phase 2
         self.enable_chm_log = self.config.get('enable_chm_log', True)
+        
+        self._log(f"[TIMESTAMP-INIT] github_token present: {bool(self.github_token)}")
+        if self.github_token:
+            self._log(f"[TIMESTAMP-INIT] github_token length: {len(self.github_token)}")
+        self._log(f"[TIMESTAMP-INIT] enable_github: {self.enable_github}")
+        self._log(f"[TIMESTAMP-INIT] enable_wayback: {self.enable_wayback}")
+        self._log(f"[TIMESTAMP-INIT] enable_chm_log: {self.enable_chm_log}")
         
         # CHM Log setup (MVP: local file)
         self.data_dir = os.path.expanduser("~/.local/share/chm")
@@ -48,8 +61,10 @@ class TripleTimestampService:
         # Secret key for log signatures (MVP: simple HMAC)
         self.log_secret = self._get_or_create_secret()
         
-        self._log(f"Timestamp Service initialized (GitHub={self.enable_github}, "
+        self._log(f"[TIMESTAMP-INIT] Timestamp Service initialized (GitHub={self.enable_github}, "
                   f"Wayback={self.enable_wayback}, CHM Log={self.enable_chm_log})")
+        self._log("[TIMESTAMP-INIT] === Initialization complete ===")
+
     
     def submit_proof_hash(self, proof_hash, proof_dict=None):
         """
@@ -77,9 +92,16 @@ class TripleTimestampService:
         }
         
         self._log(f"[TIMESTAMP] Submitting proof hash: {proof_hash[:16]}...")
+        self._log(f"[TIMESTAMP] enable_github flag: {self.enable_github}")
+        self._log(f"[TIMESTAMP] enable_wayback flag: {self.enable_wayback}")
+        self._log(f"[TIMESTAMP] enable_chm_log flag: {self.enable_chm_log}")
         
         # GitHub Gist submission
         if self.enable_github:
+            self._log(f"[TIMESTAMP-DEBUG] GitHub enabled, attempting submission...")
+            self._log(f"[TIMESTAMP-DEBUG] Token available: {'yes' if self.github_token else 'no'}")
+            if self.github_token:
+                self._log(f"[TIMESTAMP-DEBUG] Token length: {len(self.github_token)}")
             try:
                 results['github'] = self._submit_to_github(proof_hash, proof_dict)
                 results['success_count'] += 1
@@ -88,6 +110,11 @@ class TripleTimestampService:
                 error_msg = f"GitHub submission failed: {e}"
                 results['errors'].append(error_msg)
                 self._log(f"[TIMESTAMP] ✗ {error_msg}")
+                # Add full traceback for debugging
+                import traceback
+                self._log(f"[TIMESTAMP-DEBUG] GitHub error traceback:\n{traceback.format_exc()}")
+        else:
+            self._log(f"[TIMESTAMP] GitHub submission SKIPPED (enable_github={self.enable_github})")
         
         # Wayback Machine submission (Phase 2)
         if self.enable_wayback:
@@ -122,6 +149,8 @@ class TripleTimestampService:
         Creates a public gist with the proof hash. Git commit timestamp
         provides immutable proof-of-existence.
         
+        Uses stdlib urllib (no external dependencies like requests).
+        
         Args:
             proof_hash: str - hash to timestamp
             proof_dict: dict - optional proof context
@@ -134,12 +163,78 @@ class TripleTimestampService:
                 'verified': bool
             }
         """
-        try:
-            import requests
-        except ImportError:
-            raise Exception("requests library not available (needed for GitHub API)")
+        self._log("[GITHUB-SUBMIT] === Starting GitHub Gist submission ===")
         
-        # Prepare gist content
+        # Use stdlib urllib instead of requests (Krita doesn't have requests)
+        try:
+            self._log("[GITHUB-SUBMIT] Importing urllib modules...")
+            import urllib.request
+            import urllib.error
+            import ssl
+            self._log("[GITHUB-SUBMIT] ✓ urllib modules imported")
+        except Exception as e:
+            self._log(f"[GITHUB-SUBMIT] ✗ Failed to import urllib: {e}")
+            raise
+        
+        # Create SSL context (for macOS certificate handling)
+        try:
+            self._log("[GITHUB-SUBMIT] Creating SSL context...")
+            
+            # DIAGNOSTIC: Check for certifi package (Python SSL cert bundle)
+            certifi_available = False
+            certifi_path = None
+            try:
+                import certifi
+                certifi_available = True
+                certifi_path = certifi.where()
+                self._log(f"[SSL-DIAG] certifi package available: {certifi_path}")
+            except ImportError:
+                self._log("[SSL-DIAG] certifi package NOT available")
+            
+            # DIAGNOSTIC: Check system SSL paths
+            import os
+            system_cert_paths = [
+                '/etc/ssl/cert.pem',  # macOS
+                '/etc/ssl/certs/ca-certificates.crt',  # Linux
+                '/etc/pki/tls/certs/ca-bundle.crt',  # RedHat/CentOS
+            ]
+            self._log("[SSL-DIAG] Checking system certificate paths:")
+            for cert_path in system_cert_paths:
+                exists = os.path.isfile(cert_path)
+                self._log(f"[SSL-DIAG]   {cert_path}: {'EXISTS' if exists else 'NOT FOUND'}")
+            
+            # Try multiple SSL context creation strategies
+            ssl_context = None
+            
+            # Strategy 1: Use certifi if available
+            if certifi_available and certifi_path:
+                self._log("[SSL-STRATEGY] Trying certifi package...")
+                ssl_context = ssl.create_default_context(cafile=certifi_path)
+                self._log("[SSL-STRATEGY] ✓ SSL context created with certifi")
+            
+            # Strategy 2: Use default context (system certs)
+            if not ssl_context:
+                self._log("[SSL-STRATEGY] Trying default system context...")
+                try:
+                    ssl_context = ssl.create_default_context()
+                    self._log("[SSL-STRATEGY] ✓ SSL context created with system certs")
+                except Exception as e:
+                    self._log(f"[SSL-STRATEGY] ✗ Default context failed: {e}")
+            
+            # Strategy 3: Unverified context (FALLBACK - less secure but functional)
+            if not ssl_context:
+                self._log("[SSL-STRATEGY] ⚠️  FALLBACK: Using unverified SSL context")
+                self._log("[SSL-STRATEGY] ⚠️  This is less secure but allows functionality")
+                ssl_context = ssl._create_unverified_context()
+                self._log("[SSL-STRATEGY] ✓ Unverified SSL context created")
+            
+            self._log("[GITHUB-SUBMIT] ✓ SSL context created successfully")
+            
+        except Exception as e:
+            self._log(f"[GITHUB-SUBMIT] ✗ Failed to create SSL context: {e}")
+            raise
+        
+        # Prepare gist content with comprehensive proof details
         gist_content = {
             "proof_hash": proof_hash,
             "timestamp": datetime.utcnow().isoformat() + 'Z',
@@ -147,25 +242,60 @@ class TripleTimestampService:
             "service": "CHM - Certified Human-Made"
         }
         
-        # Add context if provided (classification, session ID, etc.)
+        # Add comprehensive proof details if provided
         if proof_dict:
-            gist_content['context'] = {
+            event_summary = proof_dict.get('event_summary', {})
+            
+            gist_content['proof_details'] = {
+                # Classification
+                'classification': proof_dict.get('classification', 'Unknown'),
+                'confidence': proof_dict.get('confidence', 0.0),
+                
+                # Session info
                 'session_id': proof_dict.get('session_id'),
-                'classification': proof_dict.get('classification'),
-                'file_hash': proof_dict.get('file_hash', '')[:16] + '...'  # Truncated
+                'document_id': proof_dict.get('document_id'),
+                
+                # Timing
+                'start_time': proof_dict.get('start_time'),
+                'end_time': proof_dict.get('end_time'),
+                'duration_seconds': proof_dict.get('duration_seconds', 0),
+                
+                # Event statistics
+                'total_events': event_summary.get('total_events', 0),
+                'stroke_count': event_summary.get('stroke_count', 0),
+                'layer_count': event_summary.get('layer_count', 0),
+                'import_count': event_summary.get('import_count', 0),
+                
+                # Hashes (full, not truncated)
+                'file_hash': proof_dict.get('file_hash', 'N/A'),
+                'events_hash': proof_dict.get('events_hash', 'N/A'),
+                
+                # Metadata
+                'metadata': proof_dict.get('metadata', {})
             }
         
         # GitHub Gist API request
         url = "https://api.github.com/gists"
         headers = {
-            'Accept': 'application/vnd.github.v3+json'
+            'Accept': 'application/vnd.github.v3+json',
+            'Content-Type': 'application/json',
+            'User-Agent': 'CHM-Krita-Plugin/1.0'
         }
         
         if self.github_token:
             headers['Authorization'] = f'token {self.github_token}'
         
+        # Create descriptive gist title with key details
+        if proof_dict:
+            classification = proof_dict.get('classification', 'Unknown')
+            duration = proof_dict.get('duration_seconds', 0)
+            stroke_count = proof_dict.get('event_summary', {}).get('stroke_count', 0)
+            description = f"CHM Proof: {classification} - {duration}s, {stroke_count} strokes - Hash: {proof_hash[:16]}..."
+        else:
+            description = f"CHM Proof Timestamp: {proof_hash[:16]}..."
+        
         gist_data = {
-            "description": f"CHM Proof Timestamp: {proof_hash[:16]}...",
+            "description": description,
             "public": True,
             "files": {
                 "chm_proof_timestamp.json": {
@@ -174,18 +304,38 @@ class TripleTimestampService:
             }
         }
         
+        # Convert to bytes for urllib
+        data_bytes = json.dumps(gist_data).encode('utf-8')
+        
+        # Create request
+        req = urllib.request.Request(url, data=data_bytes, headers=headers, method='POST')
+        
         self._log(f"[GITHUB] POSTing to {url}...")
-        response = requests.post(url, json=gist_data, headers=headers, timeout=10)
-        response.raise_for_status()
+        self._log(f"[GITHUB] Using token: {'yes' if self.github_token else 'no (anonymous)'}")
         
-        result = response.json()
-        
-        return {
-            'url': result['html_url'],
-            'commit_sha': result['history'][0]['version'] if result.get('history') else None,
-            'timestamp': result.get('created_at', gist_content['timestamp']),
-            'verified': True
-        }
+        try:
+            with urllib.request.urlopen(req, timeout=10, context=ssl_context) as response:
+                response_data = response.read().decode('utf-8')
+                result = json.loads(response_data)
+                
+                self._log(f"[GITHUB] ✓ Gist created: {result.get('html_url', 'unknown')}")
+                
+                return {
+                    'url': result['html_url'],
+                    'commit_sha': result['history'][0]['version'] if result.get('history') else None,
+                    'timestamp': result.get('created_at', gist_content['timestamp']),
+                    'verified': True
+                }
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode('utf-8') if e.fp else 'No error body'
+            self._log(f"[GITHUB] HTTP Error {e.code}: {error_body}")
+            raise Exception(f"GitHub API error {e.code}: {error_body}")
+        except urllib.error.URLError as e:
+            self._log(f"[GITHUB] URL Error: {e.reason}")
+            raise Exception(f"GitHub connection failed: {e.reason}")
+        except Exception as e:
+            self._log(f"[GITHUB] Unexpected error: {e}")
+            raise
     
     def _submit_to_wayback(self, proof_hash, proof_dict=None):
         """
@@ -319,6 +469,8 @@ class TripleTimestampService:
         """
         Verify that timestamps are still accessible.
         
+        Uses stdlib urllib (no external dependencies).
+        
         Args:
             timestamps: dict - timestamp results from submit_proof_hash()
         
@@ -330,6 +482,13 @@ class TripleTimestampService:
                 'all_verified': bool
             }
         """
+        import urllib.request
+        import urllib.error
+        import ssl
+        
+        # Create SSL context
+        ssl_context = ssl.create_default_context()
+        
         verification = {
             'github': False,
             'wayback': False,
@@ -339,18 +498,24 @@ class TripleTimestampService:
         # Verify GitHub Gist
         if timestamps.get('github'):
             try:
-                import requests
-                response = requests.head(timestamps['github']['url'], timeout=5)
-                verification['github'] = response.status_code == 200
+                req = urllib.request.Request(
+                    timestamps['github']['url'],
+                    method='HEAD'
+                )
+                with urllib.request.urlopen(req, timeout=5, context=ssl_context) as response:
+                    verification['github'] = (response.status == 200)
             except:
                 verification['github'] = False
         
         # Verify Wayback snapshot
         if timestamps.get('wayback'):
             try:
-                import requests
-                response = requests.head(timestamps['wayback']['url'], timeout=5)
-                verification['wayback'] = response.status_code == 200
+                req = urllib.request.Request(
+                    timestamps['wayback']['url'],
+                    method='HEAD'
+                )
+                with urllib.request.urlopen(req, timeout=5, context=ssl_context) as response:
+                    verification['wayback'] = (response.status == 200)
             except:
                 verification['wayback'] = False
         
@@ -370,7 +535,12 @@ class TripleTimestampService:
     def _log(self, message):
         """Print debug log if enabled"""
         if self.debug_log:
-            print(message)
+            if self.logger_func:
+                # Use custom logger (e.g., CHM's _debug_log that writes to file)
+                self.logger_func(message)
+            else:
+                # Fallback to print
+                print(message)
 
 
 if __name__ == "__main__":

@@ -31,6 +31,12 @@ if pgrep -x "krita" > /dev/null; then
     fi
 fi
 
+echo "Clearing Python cache..."
+# Remove __pycache__ to ensure fresh bytecode compilation
+rm -rf "$PLUGIN_DIR/chm_verifier/__pycache__" 2>/dev/null || true
+echo "✅ Cache cleared"
+echo ""
+
 echo "Updating Python files..."
 # Only copy Python files (faster than copying everything)
 cp "$SOURCE_DIR"/*.py "$PLUGIN_DIR/chm_verifier/" 2>/dev/null || true

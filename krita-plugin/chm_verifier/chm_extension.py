@@ -91,7 +91,20 @@ class CHMExtension(Extension):
         self.api_client = CHMApiClient(debug_log=self.DEBUG_LOG)
         
         # Initialize timestamp service (Task 1.13)
-        self.timestamp_service = TripleTimestampService(debug_log=self.DEBUG_LOG)
+        # Load GitHub token from environment or config file
+        github_token = self._load_github_token()
+        timestamp_config = {
+            'github_token': github_token,
+            'enable_github': True,
+            'enable_wayback': False,
+            'enable_chm_log': True
+        }
+        # Pass our logger function so timestamp service logs appear in debug file
+        self.timestamp_service = TripleTimestampService(
+            config=timestamp_config, 
+            debug_log=self.DEBUG_LOG,
+            logger_func=self._debug_log  # Pass our logging function
+        )
         
         # Initialize path preferences
         self.path_prefs = PathPreferences()
@@ -329,11 +342,16 @@ class CHMExtension(Extension):
                 self._log(f"[EXPORT] ✓ Proof updated with timestamps")
                 
                 if success_count > 0:
-                    timestamp_status = f"✓ Timestamped ({success_count}/2 services)"
+                    # Build timestamp status with service details
+                    services = []
                     if timestamp_results.get('github'):
+                        services.append("GitHub Gist")
                         self._log(f"[EXPORT]   • GitHub Gist: {timestamp_results['github']['url']}")
                     if timestamp_results.get('chm_log'):
+                        services.append("CHM Log")
                         self._log(f"[EXPORT]   • CHM Log: index {timestamp_results['chm_log']['log_index']}")
+                    
+                    timestamp_status = f"✓ Timestamped ({success_count}/2 services: {', '.join(services)})"
                 else:
                     timestamp_status = "⚠️  All timestamp services failed"
                     
@@ -459,9 +477,11 @@ class CHMExtension(Extension):
                 f"C2PA: {c2pa_status}"
             )
             
-            # Add clickable GitHub URL if available
+            # Add clickable GitHub Gist URL if available (public timestamp proof)
             if timestamp_results and timestamp_results.get('github'):
-                message += f"\n\nGitHub Gist:\n{timestamp_results['github']['url']}"
+                github_url = timestamp_results['github']['url']
+                message += f"\n\n🔗 Public Timestamp:\n{github_url}"
+                self._log(f"[EXPORT] 🔗 Public timestamp proof: {github_url}")
             
             QMessageBox.information(
                 None,
@@ -671,6 +691,68 @@ class CHMExtension(Extension):
         
         self._log(f"Plugin directories for {system}: {directories}")
         return directories
+    
+    def _load_github_token(self):
+        """
+        Load GitHub Personal Access Token for Gist API.
+        
+        Checks in order:
+        1. Environment variable: CHM_GITHUB_TOKEN
+        2. Config file: ~/.config/chm/github_token.txt
+        3. Returns None (anonymous mode with rate limits)
+        
+        Returns:
+            str or None: GitHub token if available
+        """
+        import os
+        
+        self._log("[GITHUB-TOKEN] === Starting token load process ===")
+        
+        # 1. Check environment variable
+        self._log("[GITHUB-TOKEN] Step 1: Checking environment variable CHM_GITHUB_TOKEN...")
+        token = os.environ.get('CHM_GITHUB_TOKEN')
+        if token:
+            self._log(f"[GITHUB-TOKEN] ✓ Loaded from environment variable (length: {len(token)})")
+            return token
+        else:
+            self._log("[GITHUB-TOKEN] ✗ Environment variable not set")
+        
+        # 2. Check config file
+        self._log("[GITHUB-TOKEN] Step 2: Checking config file...")
+        config_dir = os.path.expanduser("~/.config/chm")
+        token_file = os.path.join(config_dir, "github_token.txt")
+        
+        self._log(f"[GITHUB-TOKEN] Config dir: {config_dir}")
+        self._log(f"[GITHUB-TOKEN] Token file path: {token_file}")
+        self._log(f"[GITHUB-TOKEN] Config dir exists: {os.path.exists(config_dir)}")
+        self._log(f"[GITHUB-TOKEN] Token file exists: {os.path.exists(token_file)}")
+        
+        if os.path.exists(token_file):
+            try:
+                self._log(f"[GITHUB-TOKEN] Attempting to read token file...")
+                with open(token_file, 'r') as f:
+                    token = f.read().strip()
+                    self._log(f"[GITHUB-TOKEN] Read {len(token)} characters from file")
+                    if token:
+                        self._log(f"[GITHUB-TOKEN] ✓ Loaded from config file: {token_file}")
+                        self._log(f"[GITHUB-TOKEN] Token length: {len(token)}, starts with: {token[:4]}...")
+                        return token
+                    else:
+                        self._log(f"[GITHUB-TOKEN] ✗ Token file is empty")
+            except Exception as e:
+                self._log(f"[GITHUB-TOKEN] ✗ Error reading token file: {e}")
+                import traceback
+                self._log(f"[GITHUB-TOKEN] Traceback:\n{traceback.format_exc()}")
+        
+        # 3. No token found - will use anonymous mode
+        self._log("[GITHUB-TOKEN] === Token load failed ===")
+        self._log("[GITHUB-TOKEN] No token found - using anonymous mode (lower rate limits)")
+        self._log(f"[GITHUB-TOKEN] To enable authenticated mode:")
+        self._log(f"[GITHUB-TOKEN]   1. Create GitHub Personal Access Token at: https://github.com/settings/tokens")
+        self._log(f"[GITHUB-TOKEN]   2. Save to: {token_file}")
+        self._log(f"[GITHUB-TOKEN]   OR set environment variable: CHM_GITHUB_TOKEN=your_token")
+        
+        return None
     
     def _log(self, message):
         """Debug logging helper"""

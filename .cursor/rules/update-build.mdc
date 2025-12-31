@@ -6,3 +6,5 @@ After completing all intended changes, run the Build + Update tasks.json command
  ./build-for-krita.sh && ./dev-update-plugin.sh 
 
  DO NOT PUSH ANYTHING FROM /docs/ folder to the repo!
+
+ We cannot use python or rust libraries on krita due to signing issues with macos.
