@@ -61,11 +61,11 @@ SOURCE_LIB="$SOURCE_DIR/lib/chm.so"
 DEST_LIB="$PLUGIN_DIR/chm_verifier/lib/chm.so"
 
 if [ -f "$SOURCE_LIB" ]; then
-    # Compare modification times
-    if [ "$SOURCE_LIB" -nt "$DEST_LIB" ]; then
+    # Compare modification times OR force update if dest doesn't exist
+    if [ ! -f "$DEST_LIB" ] || [ "$SOURCE_LIB" -nt "$DEST_LIB" ]; then
         echo "Rust library changed, updating..."
         mkdir -p "$PLUGIN_DIR/chm_verifier/lib"
-        cp "$SOURCE_LIB" "$DEST_LIB"
+        cp -f "$SOURCE_LIB" "$DEST_LIB"
         
         # Ensure unsigned for macOS
         codesign --remove-signature "$DEST_LIB" 2>/dev/null || true
