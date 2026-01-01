@@ -98,6 +98,9 @@ class CHMSession:
             "implementation": "python"
         }
         self.finalized = False
+        
+        # BUG#008 FIX: Track drawing time (time user is actively drawing, excludes AFK)
+        self._drawing_time_secs = 0  # Accumulated drawing time in seconds
     
     def set_metadata(self, **kwargs):
         """
@@ -208,6 +211,34 @@ class CHMSession:
         """Get session duration in seconds (compatibility with Rust API)"""
         duration = (datetime.utcnow() - self.start_time).total_seconds()
         return int(duration)
+    
+    @property
+    def drawing_time_secs(self) -> int:
+        """
+        Get drawing time in seconds (time actively drawing, excludes AFK).
+        BUG#008 FIX: Compatibility with Rust API.
+        """
+        return self._drawing_time_secs
+    
+    def add_drawing_time(self, seconds: int):
+        """
+        Add drawing time (called when user is actively drawing).
+        BUG#008 FIX: Compatibility with Rust API.
+        
+        Args:
+            seconds: Number of seconds to add to drawing time
+        """
+        self._drawing_time_secs += seconds
+    
+    def set_drawing_time(self, seconds: int):
+        """
+        Set drawing time (for session restoration).
+        BUG#008 FIX: Compatibility with Rust API.
+        
+        Args:
+            seconds: Drawing time in seconds
+        """
+        self._drawing_time_secs = seconds
     
     @property
     def is_finalized(self) -> bool:
@@ -370,12 +401,14 @@ class CHMSession:
             "start_time": self.start_time.isoformat(),
             "end_time": end_time.isoformat(),
             "duration_seconds": duration,
+            "drawing_time_secs": int(self.drawing_time_secs),  # BUG#008 FIX: Include drawing time in proof
             "event_summary": {
                 "total_events": len(self.events),
                 "stroke_count": stroke_count,
                 "layer_count": layer_count,
                 "import_count": import_count,
-                "session_duration_secs": int(duration)  # Add for UI display
+                "session_duration_secs": int(duration),  # Add for UI display
+                "drawing_time_secs": int(self.drawing_time_secs)  # BUG#008 FIX: Also in event_summary for UI
             },
             "events_hash": events_hash,
             "file_hash": file_hash if file_hash else "placeholder_no_artwork_provided",
@@ -406,6 +439,7 @@ class CHMSession:
             'event_count': int(self.event_count),
             'start_time': self.start_time.isoformat() + 'Z',  # ISO format with UTC marker
             'duration_secs': int(self.duration_secs),
+            'drawing_time_secs': int(self.drawing_time_secs),  # BUG#008 FIX: Include drawing time
             'is_finalized': bool(self.is_finalized),
             'public_key': str(self.public_key),
             'metadata': self.get_metadata(),
@@ -431,6 +465,7 @@ class CHMSession:
         snapshot.events = copy.deepcopy(self.events)  # Deep copy of events
         snapshot.metadata = self.metadata.copy()
         snapshot.finalized = False  # Snapshot starts unfinalized
+        snapshot._drawing_time_secs = self._drawing_time_secs  # BUG#008 FIX: Copy drawing time
         
         return snapshot
     
