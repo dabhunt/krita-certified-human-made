@@ -556,10 +556,16 @@ class CHMExtension(Extension):
         # BUG#005 FIX: Use doc_key (session key) instead of doc_id
         doc_key = self.event_capture._get_doc_key(doc)
         
+        # DEBUG: Log raw session data
+        self._log(f"[VIEW-DEBUG] Session has {len(session.events)} events in events list")
+        self._log(f"[VIEW-DEBUG] Session.event_count: {session.event_count}")
+        
         # Count events by type
         stroke_count = sum(1 for e in session.events if e.get("type") == "stroke")
         layer_count = sum(1 for e in session.events if e.get("type") in ["layer_created", "layer_added"])
         import_count = sum(1 for e in session.events if e.get("type") == "import")
+        
+        self._log(f"[VIEW-DEBUG] Counted: strokes={stroke_count}, layers={layer_count}, imports={import_count}")
         
         # Get current classification (preview - not finalized)
         classification = session._classify(
@@ -584,6 +590,9 @@ class CHMExtension(Extension):
         # Get time metrics
         session_duration = session.duration_secs if hasattr(session, 'duration_secs') else 0
         drawing_time = session.drawing_time_secs if hasattr(session, 'drawing_time_secs') else 0
+        
+        self._log(f"[VIEW-DEBUG] Time: duration={session_duration}s, drawing_time={drawing_time}s")
+        self._log(f"[VIEW-DEBUG] Raw _drawing_time_secs: {session._drawing_time_secs if hasattr(session, '_drawing_time_secs') else 'N/A'}")
         
         # Build session data for dialog
         session_data = {
