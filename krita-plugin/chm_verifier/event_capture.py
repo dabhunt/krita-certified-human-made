@@ -1285,7 +1285,7 @@ class EventCapture:
         
         BUG#008 FIX: Enhanced AFK diagnostic logging to reveal detection logic.
         """
-        DEBUG_AFK = True  # Global flag for AFK-specific diagnostic logging
+        DEBUG_AFK = false  # Global flag for AFK-specific diagnostic logging
         
         try:
             # AFK-DIAG-1: Entry point
