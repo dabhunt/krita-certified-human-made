@@ -349,6 +349,21 @@ class EventCapture:
                             
                             if session:
                                 self._log(f"[RESUME-9] ✅ Session resumed: {session.id} (events: {session.event_count})")
+                                
+                                # Update metadata with current values (in case they were null or changed)
+                                try:
+                                    import platform
+                                    session.set_metadata(
+                                        document_name=doc.name(),
+                                        canvas_width=doc.width(),
+                                        canvas_height=doc.height(),
+                                        krita_version=app.version(),
+                                        os_info=f"{platform.system()} {platform.release()}"
+                                    )
+                                    self._log(f"[RESUME-9a] ✓ Metadata updated with current values")
+                                except Exception as e:
+                                    self._log(f"[RESUME-9a] ⚠️ Error updating metadata: {e}")
+                                
                                 session_resumed = True
                             else:
                                 self._log(f"[RESUME-9] ❌ Session import failed (import_session returned None)")

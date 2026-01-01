@@ -352,6 +352,8 @@ class CHMSession:
         stroke_count = sum(1 for e in self.events if e.get("type") == "stroke")
         # BUG FIX: Check both "layer_created" and "layer_added" (we use record_layer_added)
         layer_count = sum(1 for e in self.events if e.get("type") in ["layer_created", "layer_added"])
+        # FIX: Minimum 1 layer (default layer always exists even if not explicitly created)
+        layer_count = max(1, layer_count)
         import_count = sum(1 for e in self.events if e.get("type") == "import")
         
         print(f"[FLOW-3b] 📊 Event summary: {stroke_count} strokes, {layer_count} layers, {import_count} imports")

@@ -65,12 +65,11 @@ class CHMSessionManager:
             session = chm.CHMSession()
         
         # Set metadata from document
+        # Note: krita_version and os_info will be set by caller (extension/event_capture)
         session.set_metadata(
             document_name=document.name() if document.name() else None,
             canvas_width=document.width() if document.width() else None,
-            canvas_height=document.height() if document.height() else None,
-            krita_version=None,  # Will be set by extension
-            os_info=None  # Will be set by extension
+            canvas_height=document.height() if document.height() else None
         )
         
         self.active_sessions[doc_key] = session

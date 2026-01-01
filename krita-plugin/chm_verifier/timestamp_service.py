@@ -246,6 +246,10 @@ class TripleTimestampService:
         if proof_dict:
             event_summary = proof_dict.get('event_summary', {})
             
+            # Prepare metadata without sensitive info (os_info removed for privacy)
+            metadata = proof_dict.get('metadata', {}).copy()
+            metadata.pop('os_info', None)  # Remove OS info from public gist
+            
             gist_content['proof_details'] = {
                 # Classification
                 'classification': proof_dict.get('classification', 'Unknown'),
@@ -257,7 +261,8 @@ class TripleTimestampService:
                 # Timing
                 'start_time': proof_dict.get('start_time'),
                 'end_time': proof_dict.get('end_time'),
-                'duration_seconds': proof_dict.get('duration_seconds', 0),
+                'session_seconds': proof_dict.get('duration_seconds', 0),  # Renamed from duration_seconds
+                'drawing_time': event_summary.get('drawing_time_secs', 0),  # Added drawing_time
                 
                 # Event statistics
                 'total_events': event_summary.get('total_events', 0),
@@ -269,8 +274,8 @@ class TripleTimestampService:
                 'file_hash': proof_dict.get('file_hash', 'N/A'),
                 'events_hash': proof_dict.get('events_hash', 'N/A'),
                 
-                # Metadata
-                'metadata': proof_dict.get('metadata', {})
+                # Metadata (without sensitive info)
+                'metadata': metadata
             }
         
         # GitHub Gist API request
