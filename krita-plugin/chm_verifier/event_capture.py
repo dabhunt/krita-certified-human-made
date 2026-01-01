@@ -1373,9 +1373,21 @@ class EventCapture:
             
             # BUG#008 FIX: Update drawing time (increments only when not AFK)
             session = self.session_manager.get_session(doc)
+            
+            # BFROS DIAG-1: Check if session exists
+            if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
+                if session:
+                    self._log(f"[BFROS-DT-1] Session exists: {session.id[:16]}...")
+                else:
+                    self._log(f"[BFROS-DT-1] ❌ No session found for doc_id={doc_id}")
+            
             if session:
                 idle_polls = self.polls_without_change.get(doc_id, 0)
                 is_afk_now = idle_polls >= self.AFK_POLL_THRESHOLD
+                
+                # BFROS DIAG-2: Check AFK status
+                if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
+                    self._log(f"[BFROS-DT-2] idle_polls={idle_polls}, is_afk={is_afk_now}, threshold={self.AFK_POLL_THRESHOLD}")
                 
                 if not is_afk_now:
                     # User is drawing - increment drawing time by poll interval
@@ -1383,13 +1395,34 @@ class EventCapture:
                     current_time = time.time()
                     last_time = self.last_drawing_poll_time.get(doc_id)
                     
+                    # BFROS DIAG-3: Check timing
+                    if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
+                        self._log(f"[BFROS-DT-3] current_time={current_time:.2f}, last_time={last_time:.2f if last_time else 'None'}")
+                    
                     if last_time:
                         # Calculate elapsed time since last drawing poll
                         elapsed = int(current_time - last_time)
+                        
+                        # BFROS DIAG-4: Check elapsed calculation
+                        if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
+                            self._log(f"[BFROS-DT-4] elapsed={elapsed}s (will add if > 0)")
+                        
                         if elapsed > 0:
+                            # BFROS DIAG-5: About to call add_drawing_time
+                            if DEBUG_AFK and self.DEBUG_LOG:
+                                current_dt = session.drawing_time_secs if hasattr(session, 'drawing_time_secs') else 'N/A'
+                                self._log(f"[BFROS-DT-5] ✓ Adding {elapsed}s to drawing_time (current={current_dt}s)")
+                            
                             session.add_drawing_time(elapsed)
-                            if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 20 == 0:
-                                self._log(f"[DRAWING-TIME] Added {elapsed}s to drawing time (user drawing)")
+                            
+                            # BFROS DIAG-6: Verify it was added
+                            if DEBUG_AFK and self.DEBUG_LOG:
+                                new_dt = session.drawing_time_secs if hasattr(session, 'drawing_time_secs') else 'N/A'
+                                self._log(f"[BFROS-DT-6] ✓ Added! New drawing_time={new_dt}s")
+                    else:
+                        # BFROS DIAG-3b: First poll for this document
+                        if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
+                            self._log(f"[BFROS-DT-3b] First poll - initializing last_drawing_poll_time")
                     
                     self.last_drawing_poll_time[doc_id] = current_time
                 else:
