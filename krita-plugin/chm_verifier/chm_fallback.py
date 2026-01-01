@@ -53,6 +53,9 @@ class CHMSession:
             "implementation": "python-fallback"
         }
         self.finalized = False
+        
+        # FIX: Initialize layer count to 1 (default layer always exists)
+        self._layer_count = 1
     
     def set_metadata(self, **kwargs):
         """
@@ -176,6 +179,9 @@ class CHMSession:
             "timestamp": timestamp
         }
         self.events.append(event)
+        
+        # Increment layer count
+        self._layer_count += 1
     
     def get_session_id(self) -> str:
         """Get session ID"""
@@ -200,10 +206,8 @@ class CHMSession:
         
         # Count event types
         stroke_count = sum(1 for e in self.events if e.get("type") == "stroke")
-        # BUG FIX: Check both "layer_created" and "layer_added" (we use record_layer_added)
-        layer_count = sum(1 for e in self.events if e.get("type") in ["layer_created", "layer_added"])
-        # FIX: Minimum 1 layer (default layer always exists even if not explicitly created)
-        layer_count = max(1, layer_count)
+        # Use tracked layer count (initialized to 1 for default layer, incremented on layer_added events)
+        layer_count = self._layer_count
         import_count = sum(1 for e in self.events if e.get("type") == "import")
         
         # Generate event hash

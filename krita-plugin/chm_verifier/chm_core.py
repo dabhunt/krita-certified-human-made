@@ -101,6 +101,9 @@ class CHMSession:
         
         # BUG#008 FIX: Track drawing time (time user is actively drawing, excludes AFK)
         self._drawing_time_secs = 0  # Accumulated drawing time in seconds
+        
+        # FIX: Initialize layer count to 1 (default layer always exists)
+        self._layer_count = 1
     
     def set_metadata(self, **kwargs):
         """
@@ -278,6 +281,9 @@ class CHMSession:
             "timestamp": timestamp
         }
         self.events.append(event)
+        
+        # Increment layer count
+        self._layer_count += 1
     
     def get_session_id(self) -> str:
         """Get session ID"""
@@ -350,10 +356,8 @@ class CHMSession:
         
         # Count event types
         stroke_count = sum(1 for e in self.events if e.get("type") == "stroke")
-        # BUG FIX: Check both "layer_created" and "layer_added" (we use record_layer_added)
-        layer_count = sum(1 for e in self.events if e.get("type") in ["layer_created", "layer_added"])
-        # FIX: Minimum 1 layer (default layer always exists even if not explicitly created)
-        layer_count = max(1, layer_count)
+        # Use tracked layer count (initialized to 1 for default layer, incremented on layer_added events)
+        layer_count = self._layer_count
         import_count = sum(1 for e in self.events if e.get("type") == "import")
         
         print(f"[FLOW-3b] 📊 Event summary: {stroke_count} strokes, {layer_count} layers, {import_count} imports")
@@ -442,6 +446,7 @@ class CHMSession:
             'start_time': self.start_time.isoformat() + 'Z',  # ISO format with UTC marker
             'duration_secs': int(self.duration_secs),
             'drawing_time_secs': int(self.drawing_time_secs),  # BUG#008 FIX: Include drawing time
+            'layer_count': int(self._layer_count),  # FIX: Include layer count
             'is_finalized': bool(self.is_finalized),
             'public_key': str(self.public_key),
             'metadata': self.get_metadata(),
@@ -468,6 +473,7 @@ class CHMSession:
         snapshot.metadata = self.metadata.copy()
         snapshot.finalized = False  # Snapshot starts unfinalized
         snapshot._drawing_time_secs = self._drawing_time_secs  # BUG#008 FIX: Copy drawing time
+        snapshot._layer_count = self._layer_count  # FIX: Copy layer count
         
         return snapshot
     

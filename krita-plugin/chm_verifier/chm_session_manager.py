@@ -267,6 +267,16 @@ class CHMSessionManager:
                 session.set_drawing_time(int(session_data['active_drawing_time_secs']))
                 self._log(f"[IMPORT-6a] Restored drawing_time (legacy): {session_data['active_drawing_time_secs']}s")
             
+            # FIX: Restore layer count (defaults to 1 if not in saved data)
+            if 'layer_count' in session_data:
+                session._layer_count = int(session_data['layer_count'])
+                self._log(f"[IMPORT-6b] Restored layer_count: {session_data['layer_count']}")
+            else:
+                # Backwards compatibility: count from events, default to 1
+                layer_events = sum(1 for e in session.events if e.get("type") in ["layer_created", "layer_added"])
+                session._layer_count = max(1, layer_events + 1)  # +1 for default layer
+                self._log(f"[IMPORT-6b] Calculated layer_count from events: {session._layer_count}")
+            
             # Keep session unfinalized so it can continue recording
             session.finalized = False
             self._log(f"[IMPORT-7] Session ready (finalized=False)")

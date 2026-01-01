@@ -465,30 +465,27 @@ class CHMExtension(Extension):
             else:
                 self._log(f"[C2PA-DEBUG-SKIP] C2PA skipped - enabled={getattr(self, 'c2pa_enabled', False)}, builder={self.c2pa_builder is not None}")
             
-            # Show success message with timestamp URLs
-            message = (
-                f"✅ Image exported with CHM proof!\n\n"
-                f"Image: {filename}\n"
-                f"Proof: {proof_filename}\n\n"
-                f"Classification: {proof.to_dict().get('classification', 'Unknown')}\n"
-                f"Strokes: {proof.to_dict().get('event_summary', {}).get('stroke_count', 0)}\n"
-                f"Duration: {proof.to_dict().get('event_summary', {}).get('session_duration_secs', 0)}s\n\n"
-                f"Timestamps: {timestamp_status}\n"
-                f"Database: {submission_status}\n"
-                f"C2PA: {c2pa_status}"
-            )
+            # Prepare export data for confirmation dialog
+            export_data = {
+                "image_path": filename,
+                "proof_path": proof_filename,
+                "proof_data": proof.to_dict(),
+                "timestamp_status": timestamp_status,
+                "database_status": submission_status,
+                "c2pa_status": c2pa_status,
+                "timestamp_url": None
+            }
             
             # Add clickable GitHub Gist URL if available (public timestamp proof)
             if timestamp_results and timestamp_results.get('github'):
                 github_url = timestamp_results['github']['url']
-                message += f"\n\n🔗 Public Timestamp:\n{github_url}"
+                export_data["timestamp_url"] = github_url
                 self._log(f"[EXPORT] 🔗 Public timestamp proof: {github_url}")
             
-            QMessageBox.information(
-                None,
-                "CHM Export Successful",
-                message
-            )
+            # Show structured confirmation dialog
+            from .export_confirmation_dialog import ExportConfirmationDialog
+            dialog = ExportConfirmationDialog(export_data=export_data)
+            dialog.exec_()
             
             self._log("[EXPORT] ========== EXPORT COMPLETE ==========")
             
@@ -509,6 +506,7 @@ class CHMExtension(Extension):
         
         from krita import Krita
         from PyQt5.QtWidgets import QMessageBox
+        from .session_info_dialog import SessionInfoDialog
         
         app = Krita.instance()
         doc = app.activeDocument()
@@ -556,62 +554,37 @@ class CHMExtension(Extension):
         ai_tools_list = session.metadata.get("ai_tools_list", [])
         
         # Check if imports are visible (MixedMedia check)
-        mixed_media_check = ""
+        imports_visible = None
         if import_count > 0:
-            is_mixed = self.event_capture.tracing_detector.check_mixed_media(doc, doc_key)
-            mixed_media_check = f"\nImports Visible: {'Yes (MixedMedia)' if is_mixed else 'No (Hidden references)'}"
+            imports_visible = self.event_capture.tracing_detector.check_mixed_media(doc, doc_key)
         
         # Get time metrics
         session_duration = session.duration_secs if hasattr(session, 'duration_secs') else 0
         drawing_time = session.drawing_time_secs if hasattr(session, 'drawing_time_secs') else 0
         
-        # Build comprehensive info message
-        info_message = (
-            f"📊 CURRENT SESSION STATUS\n"
-            f"{'='*40}\n\n"
-            f"Session ID: {session.id[:16]}...\n"
-            f"Document: {doc.name()}\n"
-            f"Canvas: {doc.width()}x{doc.height()}px\n"
-            f"Session Duration: {session_duration}s ({session_duration // 60}m {session_duration % 60}s)\n"
-            f"Drawing Time: {drawing_time}s ({drawing_time // 60}m {drawing_time % 60}s)\n\n"
-            f"🎨 ACTIVITY\n"
-            f"{'='*40}\n"
-            f"Total Events: {session.event_count}\n"
-            f"Brush Strokes: {stroke_count}\n"
-            f"Layers Added: {layer_count}\n"
-            f"Images Imported: {import_count}\n\n"
-            f"🏷️  CLASSIFICATION (Preview)\n"
-            f"{'='*40}\n"
-            f"Current: {classification}\n"
-        )
+        # Build session data for dialog
+        session_data = {
+            "session_id": session.id,
+            "document_name": doc.name(),
+            "canvas_width": doc.width(),
+            "canvas_height": doc.height(),
+            "session_duration": session_duration,
+            "drawing_time": drawing_time,
+            "total_events": session.event_count,
+            "stroke_count": stroke_count,
+            "layer_count": layer_count,
+            "import_count": import_count,
+            "classification": classification,
+            "tracing_detected": tracing_detected,
+            "tracing_percentage": tracing_percentage,
+            "ai_tools_used": ai_tools_used,
+            "ai_tools_list": ai_tools_list,
+            "imports_visible": imports_visible
+        }
         
-        # Add tracing info if detected
-        if tracing_detected:
-            info_message += f"⚠️  Tracing Detected: {tracing_percentage*100:.1f}%\n"
-        else:
-            info_message += f"✓ No Tracing: 0.0%\n"
-        
-        # Add import visibility info
-        if import_count > 0:
-            info_message += mixed_media_check + "\n"
-        
-        # Add AI tools info
-        if ai_tools_used:
-            info_message += f"\n🤖 AI Tools: {', '.join(ai_tools_list)}\n"
-        
-        info_message += (
-            f"\n{'='*40}\n"
-            f"ℹ️  Session is still ACTIVE\n"
-            f"Classification may change as you continue working.\n"
-            f"Final classification determined on export."
-        )
-        
-        # Show in dialog
-        QMessageBox.information(
-            None,
-            "CHM Active Session",
-            info_message
-        )
+        # Show in structured dialog
+        dialog = SessionInfoDialog(session_data=session_data)
+        dialog.exec_()
         
         self._log(f"[VIEW] Session info displayed: {session.id}, classification: {classification}, imports: {import_count}")
     
