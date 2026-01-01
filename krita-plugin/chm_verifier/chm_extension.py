@@ -561,6 +561,10 @@ class CHMExtension(Extension):
             is_mixed = self.event_capture.tracing_detector.check_mixed_media(doc, doc_key)
             mixed_media_check = f"\nImports Visible: {'Yes (MixedMedia)' if is_mixed else 'No (Hidden references)'}"
         
+        # Get time metrics
+        session_duration = session.duration_secs if hasattr(session, 'duration_secs') else 0
+        drawing_time = session.drawing_time_secs if hasattr(session, 'drawing_time_secs') else 0
+        
         # Build comprehensive info message
         info_message = (
             f"📊 CURRENT SESSION STATUS\n"
@@ -568,7 +572,8 @@ class CHMExtension(Extension):
             f"Session ID: {session.id[:16]}...\n"
             f"Document: {doc.name()}\n"
             f"Canvas: {doc.width()}x{doc.height()}px\n"
-            f"Duration: {session.duration_secs}s ({session.duration_secs // 60}m {session.duration_secs % 60}s)\n\n"
+            f"Session Duration: {session_duration}s ({session_duration // 60}m {session_duration % 60}s)\n"
+            f"Drawing Time: {drawing_time}s ({drawing_time // 60}m {drawing_time % 60}s)\n\n"
             f"🎨 ACTIVITY\n"
             f"{'='*40}\n"
             f"Total Events: {session.event_count}\n"
