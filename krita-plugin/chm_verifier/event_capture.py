@@ -178,12 +178,12 @@ class EventCapture:
         self.doc_undo_count = {}  # doc_id -> int (undo stack count)
         
         # AFK Detection: Track polls without content changes
-        # After 2 polls (1 second) without changes, stop incrementing active time
+        # After 2 polls (1 second) without changes, stop incrementing drawing time
         self.polls_without_change = {}  # doc_id -> int (consecutive polls with no change)
         self.AFK_POLL_THRESHOLD = 2  # 2 polls × 500ms = 1 second idle before AFK
         
-        # Active Time Tracking: Track time spent actively drawing (excludes AFK)
-        self.last_active_poll_time = {}  # doc_id -> timestamp (last time user was active)
+        # Drawing Time Tracking: Track time spent actively drawing (excludes AFK)
+        self.last_drawing_poll_time = {}  # doc_id -> timestamp (last time user was drawing)
         
         # Tracing Detection: Perceptual hash comparison
         self.tracing_detector = TracingDetector(debug_log=debug_log)
@@ -1371,41 +1371,41 @@ class EventCapture:
                 if self.DEBUG_LOG:
                     self._log(f"[BFROS-STROKE] ✓ Transition detected (False → True)")
             
-            # BUG#008 FIX: Update active drawing time (increments only when not AFK)
+            # BUG#008 FIX: Update drawing time (increments only when not AFK)
             session = self.session_manager.get_session(doc)
             if session:
                 idle_polls = self.polls_without_change.get(doc_id, 0)
                 is_afk_now = idle_polls >= self.AFK_POLL_THRESHOLD
                 
                 if not is_afk_now:
-                    # User is active - increment active drawing time by poll interval
+                    # User is drawing - increment drawing time by poll interval
                     import time
                     current_time = time.time()
-                    last_time = self.last_active_poll_time.get(doc_id)
+                    last_time = self.last_drawing_poll_time.get(doc_id)
                     
                     if last_time:
-                        # Calculate elapsed time since last active poll
+                        # Calculate elapsed time since last drawing poll
                         elapsed = int(current_time - last_time)
                         if elapsed > 0:
-                            session.add_active_time(elapsed)
+                            session.add_drawing_time(elapsed)
                             if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 20 == 0:
-                                self._log(f"[ACTIVE-TIME] Added {elapsed}s to active time (user drawing)")
+                                self._log(f"[DRAWING-TIME] Added {elapsed}s to drawing time (user drawing)")
                     
-                    self.last_active_poll_time[doc_id] = current_time
+                    self.last_drawing_poll_time[doc_id] = current_time
                 else:
-                    # User is AFK - don't increment active time
+                    # User is AFK - don't increment drawing time
                     if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 20 == 0:
-                        self._log(f"[ACTIVE-TIME] User AFK - not incrementing active time")
+                        self._log(f"[DRAWING-TIME] User AFK - not incrementing drawing time")
             
             # AFK-DIAG-10: Session metrics check
             if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
                 if session:
                     duration = session.duration_secs if hasattr(session, 'duration_secs') else 'N/A'
-                    active_time = session.active_drawing_time_secs if hasattr(session, 'active_drawing_time_secs') else 'N/A'
+                    drawing_time = session.drawing_time_secs if hasattr(session, 'drawing_time_secs') else 'N/A'
                     event_count = session.event_count if hasattr(session, 'event_count') else 'N/A'
                     idle_polls = self.polls_without_change.get(doc_id, 0)
                     is_afk_now = idle_polls >= self.AFK_POLL_THRESHOLD
-                    self._log(f"[AFK-DIAG-10] Session: duration={duration}s, active={active_time}s, events={event_count}, idle_polls={idle_polls}, is_afk={is_afk_now}")
+                    self._log(f"[AFK-DIAG-10] Session: duration={duration}s, drawing={drawing_time}s, events={event_count}, idle_polls={idle_polls}, is_afk={is_afk_now}")
             
             if should_record:
                 import time

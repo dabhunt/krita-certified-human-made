@@ -46,9 +46,9 @@ pub struct CHMSession {
     encryption_key: EncryptionKey,
     signing_key: SigningKey,
     pub is_finalized: bool,
-    /// Active drawing time in seconds (excludes AFK periods)
+    /// Drawing time in seconds (excludes AFK periods)
     /// Updated by Python layer when user is actively drawing
-    pub active_drawing_time_secs: i64,
+    pub drawing_time_secs: i64,
 }
 
 impl CHMSession {
@@ -77,7 +77,7 @@ impl CHMSession {
             encryption_key,
             signing_key,
             is_finalized: false,
-            active_drawing_time_secs: 0,
+            drawing_time_secs: 0,
         };
 
         log::info!("Created new CHM session: {}", session.id);
@@ -394,7 +394,7 @@ impl CHMSession {
             stroke_count,
             layer_count,
             session_duration_secs: self.duration_secs() as u64,
-            active_drawing_time_secs: self.active_drawing_time_secs as u64,
+            drawing_time_secs: self.drawing_time_secs as u64,
             plugins_used,
             imports_count,
             undo_redo_count,
@@ -427,23 +427,23 @@ impl CHMSession {
         }
     }
     
-    /// Get active drawing time in seconds (excludes AFK periods)
+    /// Get drawing time in seconds (excludes AFK periods)
     /// This represents actual time spent drawing, updated by Python layer.
-    pub fn active_drawing_time_secs(&self) -> i64 {
-        self.active_drawing_time_secs
+    pub fn drawing_time_secs(&self) -> i64 {
+        self.drawing_time_secs
     }
     
-    /// Increment active drawing time (called by Python layer when user is actively drawing)
+    /// Increment drawing time (called by Python layer when user is actively drawing)
     /// 
     /// # Arguments
-    /// * `seconds` - Number of seconds to add to active drawing time
-    pub fn add_active_time(&mut self, seconds: i64) {
-        self.active_drawing_time_secs += seconds;
+    /// * `seconds` - Number of seconds to add to drawing time
+    pub fn add_drawing_time(&mut self, seconds: i64) {
+        self.drawing_time_secs += seconds;
     }
     
-    /// Set active drawing time directly (for session restoration)
-    pub fn set_active_time(&mut self, seconds: i64) {
-        self.active_drawing_time_secs = seconds;
+    /// Set drawing time directly (for session restoration)
+    pub fn set_drawing_time(&mut self, seconds: i64) {
+        self.drawing_time_secs = seconds;
     }
 
     /// Check if session is finalized
