@@ -250,6 +250,18 @@ class TripleTimestampService:
             metadata = proof_dict.get('metadata', {}).copy()
             metadata.pop('os_info', None)  # Remove OS info from public gist
             
+            # Extract AI tools info
+            # Determine AI tools status: 'None', 'Disabled', or 'Yes'
+            ai_tools_used = metadata.get('ai_tools_used', False)
+            ai_plugins_detected = metadata.get('ai_plugins_detected', False)
+            
+            if ai_tools_used:
+                ai_tools_status = 'Yes'
+            elif ai_plugins_detected:
+                ai_tools_status = 'Disabled'
+            else:
+                ai_tools_status = 'None'
+            
             gist_content['proof_details'] = {
                 # Classification
                 'classification': proof_dict.get('classification', 'Unknown'),
@@ -269,6 +281,9 @@ class TripleTimestampService:
                 'stroke_count': event_summary.get('stroke_count', 0),
                 'layer_count': event_summary.get('layer_count', 0),
                 'import_count': event_summary.get('import_count', 0),
+                
+                # AI tools status: 'None', 'Disabled', or 'Yes'
+                'ai_tools': ai_tools_status,
                 
                 # Hashes (full, not truncated)
                 'file_hash': proof_dict.get('file_hash', 'N/A'),

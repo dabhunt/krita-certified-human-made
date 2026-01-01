@@ -47,7 +47,7 @@ class ExportConfirmationDialog(QDialog):
         layout.addWidget(title)
         
         # Files group
-        files_group = QGroupBox("📁 Exported Files")
+        files_group = QGroupBox("Exported Files")
         files_layout = QFormLayout()
         
         self.image_path_label = QLabel("N/A")
@@ -61,7 +61,7 @@ class ExportConfirmationDialog(QDialog):
         layout.addWidget(files_group)
         
         # Classification group
-        class_group = QGroupBox("🏷️ Classification")
+        class_group = QGroupBox("Classification")
         class_layout = QFormLayout()
         
         self.classification_label = QLabel("Loading...")
@@ -77,7 +77,7 @@ class ExportConfirmationDialog(QDialog):
         layout.addWidget(class_group)
         
         # Verification status group
-        verify_group = QGroupBox("🔐 Verification & Timestamps")
+        verify_group = QGroupBox("Verification & Timestamps")
         verify_layout = QFormLayout()
         
         self.timestamp_label = QLabel("N/A")
@@ -94,7 +94,7 @@ class ExportConfirmationDialog(QDialog):
         layout.addWidget(verify_group)
         
         # Public timestamp link (if available)
-        self.timestamp_link_group = QGroupBox("🔗 Public Timestamp Proof")
+        self.timestamp_link_group = QGroupBox("Public Timestamp Proof")
         timestamp_link_layout = QVBoxLayout()
         
         self.timestamp_url_label = QLabel("")
@@ -138,7 +138,14 @@ class ExportConfirmationDialog(QDialog):
         proof_data = export_data.get("proof_data", {})
         classification = proof_data.get("classification", "Unknown")
         
-        self.classification_label.setText(classification)
+        # Format classification display name
+        classification_display = classification
+        if classification == "HumanMade":
+            classification_display = "100% Human Made"
+        elif classification == "MixedMedia":
+            classification_display = "Mixed Media"
+        
+        self.classification_label.setText(classification_display)
         
         # Style classification based on type
         if classification == "HumanMade":

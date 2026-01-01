@@ -138,7 +138,14 @@ class VerificationDialog(QDialog):
         print(f"[FLOW-6] Classification: {classification}")
         sys.stdout.flush()
         
-        self.class_label.setText(classification)
+        # Format classification display name
+        classification_display = classification
+        if classification == "HumanMade":
+            classification_display = "100% Human Made"
+        elif classification == "MixedMedia":
+            classification_display = "Mixed Media"
+        
+        self.class_label.setText(classification_display)
         
         # Session info
         session_id = proof_data.get("session_id", "N/A")

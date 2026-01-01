@@ -241,9 +241,13 @@ class CHMExtension(Extension):
         
         try:
             # Get AI plugins detected (Task 1.7 integration)
-            ai_plugins = self.plugin_monitor.get_enabled_ai_plugins() if self.plugin_monitor else []
-            if ai_plugins:
-                self._log(f"[EXPORT] ⚠️  {len(ai_plugins)} AI plugin(s) are enabled - artwork will be classified as AIAssisted")
+            ai_plugins_enabled = self.plugin_monitor.get_enabled_ai_plugins() if self.plugin_monitor else []
+            ai_plugins_all = self.plugin_monitor.get_ai_plugins() if self.plugin_monitor else []
+            
+            if ai_plugins_enabled:
+                self._log(f"[EXPORT] ⚠️  {len(ai_plugins_enabled)} AI plugin(s) are enabled - artwork will be classified as AIAssisted")
+            elif ai_plugins_all:
+                self._log(f"[EXPORT] ℹ️  {len(ai_plugins_all)} AI plugin(s) detected but disabled")
             
             # Export image FIRST (so we can compute dual-hash during finalization)
             # Note: exportImage() uses default export settings (no configuration needed)
@@ -260,7 +264,8 @@ class CHMExtension(Extension):
             proof = self.session_manager.finalize_session(
                 doc, 
                 artwork_path=filename,  # ← Pass artwork path for file hash
-                ai_plugins=ai_plugins,
+                ai_plugins=ai_plugins_enabled,
+                ai_plugins_detected=len(ai_plugins_all) > 0,  # ← Track if any AI plugins exist (enabled or not)
                 for_export=True,  # ← Create snapshot, don't destroy active session
                 tracing_detector=self.event_capture.tracing_detector  # ← Pass tracing detector for MixedMedia check
             )

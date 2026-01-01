@@ -60,7 +60,7 @@ class SessionInfoDialog(QDialog):
         layout.addWidget(doc_group)
         
         # Time metrics group
-        time_group = QGroupBox("⏱️ Time Metrics")
+        time_group = QGroupBox("Time Metrics")
         time_layout = QFormLayout()
         
         self.session_duration_label = QLabel("N/A")
@@ -72,7 +72,7 @@ class SessionInfoDialog(QDialog):
         layout.addWidget(time_group)
         
         # Activity group
-        activity_group = QGroupBox("🎨 Activity")
+        activity_group = QGroupBox("Activity")
         activity_layout = QFormLayout()
         
         self.total_events_label = QLabel("N/A")
@@ -88,7 +88,7 @@ class SessionInfoDialog(QDialog):
         layout.addWidget(activity_group)
         
         # Classification group
-        class_group = QGroupBox("🏷️ Classification (Preview)")
+        class_group = QGroupBox("Classification (Preview)")
         class_layout = QFormLayout()
         
         self.classification_label = QLabel("Loading...")
@@ -105,15 +105,13 @@ class SessionInfoDialog(QDialog):
         
         # Status notice
         notice = QLabel(
-            "ℹ️ Session is still ACTIVE\n"
+            "⚠️ Session is still ACTIVE\n"
             "Classification may change as you continue working.\n"
             "Final classification determined on export."
         )
         notice.setStyleSheet(
-            "background-color: #e3f2fd; "
             "padding: 10px; "
-            "border-radius: 5px; "
-            "color: #1976d2; "
+            "color: orange; "
             "font-size: 10pt;"
         )
         notice.setWordWrap(True)
@@ -171,7 +169,15 @@ class SessionInfoDialog(QDialog):
         
         # Classification
         classification = session_data.get("classification", "Unknown")
-        self.classification_label.setText(classification)
+        
+        # Format classification display name
+        classification_display = classification
+        if classification == "HumanMade":
+            classification_display = "100% Human Made"
+        elif classification == "MixedMedia":
+            classification_display = "Mixed Media"
+        
+        self.classification_label.setText(classification_display)
         
         # Style classification based on type
         if classification == "HumanMade":

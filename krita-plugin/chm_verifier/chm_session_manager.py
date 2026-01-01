@@ -82,7 +82,7 @@ class CHMSessionManager:
         doc_key = self._get_document_key(document)
         return self.active_sessions.get(doc_key)
     
-    def finalize_session(self, document, artwork_path=None, ai_plugins=None, for_export=False, tracing_detector=None):
+    def finalize_session(self, document, artwork_path=None, ai_plugins=None, ai_plugins_detected=False, for_export=False, tracing_detector=None):
         """
         Finalize session and generate proof.
         
@@ -94,6 +94,7 @@ class CHMSessionManager:
             artwork_path: Optional path to exported artwork (for dual-hash computation)
             ai_plugins: Optional list of detected AI plugin dicts
                        (from PluginMonitor.get_enabled_ai_plugins())
+            ai_plugins_detected: Boolean indicating if any AI plugins exist (enabled or disabled)
             for_export: If True, create snapshot for proof (keeps original session alive)
             tracing_detector: Optional TracingDetector instance for MixedMedia detection
         
@@ -125,6 +126,9 @@ class CHMSessionManager:
             session_to_finalize = session
         
         # Record AI plugins before finalizing
+        # Store whether AI plugins were detected (for GitHub Gist 'ai_tools' field)
+        session_to_finalize.set_metadata(ai_plugins_detected=ai_plugins_detected)
+        
         if ai_plugins:
             self._log(f"[FINALIZE-3] Recording {len(ai_plugins)} AI plugin(s) used...")
             for plugin in ai_plugins:
