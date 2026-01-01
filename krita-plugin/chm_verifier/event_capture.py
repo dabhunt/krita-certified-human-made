@@ -178,9 +178,12 @@ class EventCapture:
         self.doc_undo_count = {}  # doc_id -> int (undo stack count)
         
         # AFK Detection: Track polls without content changes
-        # After 2 polls (10 seconds) without changes, stop recording duration
+        # After 2 polls (1 second) without changes, stop incrementing active time
         self.polls_without_change = {}  # doc_id -> int (consecutive polls with no change)
-        self.AFK_POLL_THRESHOLD = 2  # 2 polls × 5s = 10 seconds idle before AFK
+        self.AFK_POLL_THRESHOLD = 2  # 2 polls × 500ms = 1 second idle before AFK
+        
+        # Active Time Tracking: Track time spent actively drawing (excludes AFK)
+        self.last_active_poll_time = {}  # doc_id -> timestamp (last time user was active)
         
         # Tracing Detection: Perceptual hash comparison
         self.tracing_detector = TracingDetector(debug_log=debug_log)
@@ -1368,14 +1371,41 @@ class EventCapture:
                 if self.DEBUG_LOG:
                     self._log(f"[BFROS-STROKE] ✓ Transition detected (False → True)")
             
-            # AFK-DIAG-10: Session duration check (before recording)
+            # BUG#008 FIX: Update active drawing time (increments only when not AFK)
+            session = self.session_manager.get_session(doc)
+            if session:
+                idle_polls = self.polls_without_change.get(doc_id, 0)
+                is_afk_now = idle_polls >= self.AFK_POLL_THRESHOLD
+                
+                if not is_afk_now:
+                    # User is active - increment active drawing time by poll interval
+                    import time
+                    current_time = time.time()
+                    last_time = self.last_active_poll_time.get(doc_id)
+                    
+                    if last_time:
+                        # Calculate elapsed time since last active poll
+                        elapsed = int(current_time - last_time)
+                        if elapsed > 0:
+                            session.add_active_time(elapsed)
+                            if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 20 == 0:
+                                self._log(f"[ACTIVE-TIME] Added {elapsed}s to active time (user drawing)")
+                    
+                    self.last_active_poll_time[doc_id] = current_time
+                else:
+                    # User is AFK - don't increment active time
+                    if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 20 == 0:
+                        self._log(f"[ACTIVE-TIME] User AFK - not incrementing active time")
+            
+            # AFK-DIAG-10: Session metrics check
             if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
-                session = self.session_manager.get_session(doc)
                 if session:
                     duration = session.duration_secs if hasattr(session, 'duration_secs') else 'N/A'
+                    active_time = session.active_drawing_time_secs if hasattr(session, 'active_drawing_time_secs') else 'N/A'
+                    event_count = session.event_count if hasattr(session, 'event_count') else 'N/A'
                     idle_polls = self.polls_without_change.get(doc_id, 0)
                     is_afk_now = idle_polls >= self.AFK_POLL_THRESHOLD
-                    self._log(f"[AFK-DIAG-10] Session duration={duration}s, idle_polls={idle_polls}, is_afk={is_afk_now}")
+                    self._log(f"[AFK-DIAG-10] Session: duration={duration}s, active={active_time}s, events={event_count}, idle_polls={idle_polls}, is_afk={is_afk_now}")
             
             if should_record:
                 import time
@@ -1422,8 +1452,9 @@ class EventCapture:
                 
                 if session:
                     # Record a stroke event (generic since we don't have coordinates)
-                    if self.DEBUG_LOG:
-                        self._log(f"[FLOW-1] 🎨 Stroke detected! Recording to session {session.id}")
+                    if DEBUG_AFK and self.DEBUG_LOG:
+                        self._log(f"[AFK-DIAG-12] 🎨 Stroke detected! Recording to session {session.id}")
+                        self._log(f"[AFK-DIAG-12a] Event count BEFORE recording: {session.event_count}")
                     
                     session.record_stroke(
                         x=0.0,  # Placeholder - polling doesn't provide coordinates
@@ -1435,8 +1466,9 @@ class EventCapture:
                     # Update last stroke time (not used for detection anymore, but kept for future features)
                     self._last_stroke_time[doc_id] = current_time
                     
-                    if self.DEBUG_LOG:
-                        self._log(f"[FLOW-2] ✓ Stroke recorded (session {session.id}, total events: {session.event_count})")
+                    if DEBUG_AFK and self.DEBUG_LOG:
+                        self._log(f"[AFK-DIAG-12b] ✓ Stroke recorded! Event count AFTER: {session.event_count}")
+                        self._log(f"[AFK-DIAG-12c] Session duration after recording: {session.duration_secs}s")
                     
                     # BUG#005 FIX: Use doc_key instead of doc_id
                     doc_key = self._get_doc_key(doc)

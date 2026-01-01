@@ -46,6 +46,9 @@ pub struct CHMSession {
     encryption_key: EncryptionKey,
     signing_key: SigningKey,
     pub is_finalized: bool,
+    /// Active drawing time in seconds (excludes AFK periods)
+    /// Updated by Python layer when user is actively drawing
+    pub active_drawing_time_secs: i64,
 }
 
 impl CHMSession {
@@ -74,6 +77,7 @@ impl CHMSession {
             encryption_key,
             signing_key,
             is_finalized: false,
+            active_drawing_time_secs: 0,
         };
 
         log::info!("Created new CHM session: {}", session.id);
@@ -390,6 +394,7 @@ impl CHMSession {
             stroke_count,
             layer_count,
             session_duration_secs: self.duration_secs() as u64,
+            active_drawing_time_secs: self.active_drawing_time_secs as u64,
             plugins_used,
             imports_count,
             undo_redo_count,
@@ -401,10 +406,8 @@ impl CHMSession {
         self.events.len()
     }
 
-    /// Get session duration in seconds
-    /// BUG#008 FIX: Duration is calculated from first to last event timestamp.
-    /// This naturally excludes AFK time - duration only increases when events are recorded.
-    /// If no events yet, returns time since session start (bootstrap period).
+    /// Get session duration in seconds (total elapsed time from first to last event)
+    /// This represents the total time span of the session, including brief pauses.
     pub fn duration_secs(&self) -> i64 {
         if self.events.is_empty() {
             // No events yet - return time since session creation
@@ -422,6 +425,25 @@ impl CHMSession {
             // Duration is the span from first to last event
             last_timestamp - first_timestamp
         }
+    }
+    
+    /// Get active drawing time in seconds (excludes AFK periods)
+    /// This represents actual time spent drawing, updated by Python layer.
+    pub fn active_drawing_time_secs(&self) -> i64 {
+        self.active_drawing_time_secs
+    }
+    
+    /// Increment active drawing time (called by Python layer when user is actively drawing)
+    /// 
+    /// # Arguments
+    /// * `seconds` - Number of seconds to add to active drawing time
+    pub fn add_active_time(&mut self, seconds: i64) {
+        self.active_drawing_time_secs += seconds;
+    }
+    
+    /// Set active drawing time directly (for session restoration)
+    pub fn set_active_time(&mut self, seconds: i64) {
+        self.active_drawing_time_secs = seconds;
     }
 
     /// Check if session is finalized

@@ -259,6 +259,11 @@ class CHMSessionManager:
                 session.metadata = session_data['metadata']
                 self._log(f"[IMPORT-6] Restored metadata: {list(session.metadata.keys())}")
             
+            # BUG#008 FIX: Restore active drawing time
+            if 'active_drawing_time_secs' in session_data:
+                session.set_active_time(int(session_data['active_drawing_time_secs']))
+                self._log(f"[IMPORT-6a] Restored active_drawing_time: {session_data['active_drawing_time_secs']}s")
+            
             # Keep session unfinalized so it can continue recording
             session.finalized = False
             self._log(f"[IMPORT-7] Session ready (finalized=False)")
@@ -311,6 +316,7 @@ class CHMSessionManager:
                     'event_count': int(session.event_count),
                     'start_time': session.start_time.isoformat() + 'Z',
                     'duration_secs': int(session.duration_secs),
+                    'active_drawing_time_secs': int(session.active_drawing_time_secs) if hasattr(session, 'active_drawing_time_secs') else 0,
                     'is_finalized': bool(session.is_finalized),
                     'public_key': str(session.public_key),
                     'metadata': session.get_metadata() if hasattr(session, 'get_metadata') else {}

@@ -9,7 +9,10 @@ pub struct EventSummary {
     pub total_events: usize,
     pub stroke_count: usize,
     pub layer_count: usize,
+    /// Total session duration (first to last event, includes brief pauses)
     pub session_duration_secs: u64,
+    /// Active drawing time (excludes AFK periods, tracks actual work time)
+    pub active_drawing_time_secs: u64,
     pub plugins_used: Vec<String>,
     pub imports_count: usize,
     pub undo_redo_count: usize,

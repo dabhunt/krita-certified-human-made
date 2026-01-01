@@ -165,11 +165,27 @@
          self.inner.public_key_base64()
      }
      
-     /// Get session duration in seconds
-     #[getter]
-     fn duration_secs(&self) -> i64 {
-         self.inner.duration_secs()
-     }
+    /// Get session duration in seconds (total elapsed time)
+    #[getter]
+    fn duration_secs(&self) -> i64 {
+        self.inner.duration_secs()
+    }
+    
+    /// Get active drawing time in seconds (excludes AFK periods)
+    #[getter]
+    fn active_drawing_time_secs(&self) -> i64 {
+        self.inner.active_drawing_time_secs()
+    }
+    
+    /// Add active drawing time (called when user is actively drawing)
+    fn add_active_time(&mut self, seconds: i64) {
+        self.inner.add_active_time(seconds);
+    }
+    
+    /// Set active drawing time (for session restoration)
+    fn set_active_time(&mut self, seconds: i64) {
+        self.inner.set_active_time(seconds);
+    }
      
     /// Finalize the session and generate a proof
     /// 
