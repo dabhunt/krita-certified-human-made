@@ -182,8 +182,9 @@ class EventCapture:
         self.polls_without_change = {}  # doc_id -> int (consecutive polls with no change)
         self.AFK_POLL_THRESHOLD = 2  # 2 polls × 500ms = 1 second idle before AFK
         
-        # Drawing Time Tracking: Track time spent actively drawing (excludes AFK)
-        self.last_drawing_poll_time = {}  # doc_id -> timestamp (last time user was drawing)
+        # BUG#008 FIX: Simple poll-based drawing time tracking (excludes AFK)
+        # Count active polls instead of calculating elapsed time (simpler, less error-prone)
+        self.active_poll_count = {}  # doc_id -> int (number of polls user was actively drawing)
         
         # Tracing Detection: Perceptual hash comparison
         self.tracing_detector = TracingDetector(debug_log=debug_log)
@@ -1371,7 +1372,8 @@ class EventCapture:
                 if self.DEBUG_LOG:
                     self._log(f"[BFROS-STROKE] ✓ Transition detected (False → True)")
             
-            # BUG#008 FIX: Update drawing time (increments only when not AFK)
+            # BUG#008 FIX v2: Simple poll-based drawing time (excludes AFK)
+            # Count active polls instead of time calculations - simpler and less error-prone
             session = self.session_manager.get_session(doc)
             
             # BFROS DIAG-1: Check if session exists
@@ -1389,47 +1391,36 @@ class EventCapture:
                 if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
                     self._log(f"[BFROS-DT-2] idle_polls={idle_polls}, is_afk={is_afk_now}, threshold={self.AFK_POLL_THRESHOLD}")
                 
+                # Simple approach: Increment poll counter when not AFK
                 if not is_afk_now:
-                    # User is drawing - increment drawing time by poll interval
-                    import time
-                    current_time = time.time()
-                    last_time = self.last_drawing_poll_time.get(doc_id)
+                    # Increment active poll counter
+                    old_count = self.active_poll_count.get(doc_id, 0)
+                    self.active_poll_count[doc_id] = old_count + 1
                     
-                    # BFROS DIAG-3: Check timing
-                    if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
-                        last_time_display = f"{last_time:.2f}" if last_time else "None"
-                        self._log(f"[BFROS-DT-3] current_time={current_time:.2f}, last_time={last_time_display}")
-                    
-                    if last_time:
-                        # Calculate elapsed time since last drawing poll
-                        elapsed = int(current_time - last_time)
+                    # Calculate drawing time from poll count (500ms per poll)
+                    # Every 2 polls = 1 second, so update session every 2 polls
+                    if self.active_poll_count[doc_id] % 2 == 0:
+                        # Add 1 second to drawing time (2 polls × 500ms = 1s)
+                        current_dt = session.drawing_time_secs if hasattr(session, 'drawing_time_secs') else 0
                         
-                        # BFROS DIAG-4: Check elapsed calculation
                         if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
-                            self._log(f"[BFROS-DT-4] elapsed={elapsed}s (will add if > 0)")
+                            poll_count = self.active_poll_count[doc_id]
+                            self._log(f"[BFROS-DT-3] Active polls={poll_count}, adding 1s (current={current_dt}s)")
                         
-                        if elapsed > 0:
-                            # BFROS DIAG-5: About to call add_drawing_time
-                            if DEBUG_AFK and self.DEBUG_LOG:
-                                current_dt = session.drawing_time_secs if hasattr(session, 'drawing_time_secs') else 'N/A'
-                                self._log(f"[BFROS-DT-5] ✓ Adding {elapsed}s to drawing_time (current={current_dt}s)")
-                            
-                            session.add_drawing_time(elapsed)
-                            
-                            # BFROS DIAG-6: Verify it was added
-                            if DEBUG_AFK and self.DEBUG_LOG:
-                                new_dt = session.drawing_time_secs if hasattr(session, 'drawing_time_secs') else 'N/A'
-                                self._log(f"[BFROS-DT-6] ✓ Added! New drawing_time={new_dt}s")
+                        session.add_drawing_time(1)
+                        
+                        if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
+                            new_dt = session.drawing_time_secs if hasattr(session, 'drawing_time_secs') else 0
+                            self._log(f"[BFROS-DT-4] ✓ Drawing time updated: {new_dt}s")
                     else:
-                        # BFROS DIAG-3b: First poll for this document
+                        # Odd poll, just log the counter increment
                         if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
-                            self._log(f"[BFROS-DT-3b] First poll - initializing last_drawing_poll_time")
-                    
-                    self.last_drawing_poll_time[doc_id] = current_time
+                            poll_count = self.active_poll_count[doc_id]
+                            self._log(f"[BFROS-DT-3] Active polls={poll_count} (waiting for next poll to add 1s)")
                 else:
-                    # User is AFK - don't increment drawing time
+                    # User is AFK - don't increment poll counter
                     if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 20 == 0:
-                        self._log(f"[DRAWING-TIME] User AFK - not incrementing drawing time")
+                        self._log(f"[DRAWING-TIME] User AFK - not incrementing active poll counter")
             
             # AFK-DIAG-10: Session metrics check
             if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
