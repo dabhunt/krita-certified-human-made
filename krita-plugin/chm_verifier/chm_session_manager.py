@@ -7,6 +7,7 @@ Handles session lifecycle (create, update, finalize, resume).
 
 from .chm_loader import chm
 import json
+import uuid
 
 
 class CHMSessionManager:
@@ -16,12 +17,61 @@ class CHMSessionManager:
         self.active_sessions = {}  # Map: stable_doc_key -> CHMSession
         self.DEBUG_LOG = debug_log
     
+    def _ensure_document_uuid(self, document):
+        """
+        Ensure document has a stable UUID annotation.
+        
+        Generates and stores a UUID in the document's annotation if not present.
+        This UUID persists with the document and provides a stable identifier
+        that works even for unsaved documents.
+        
+        Args:
+            document: Krita document
+            
+        Returns:
+            str: Document UUID (existing or newly generated)
+        """
+        try:
+            # Check for existing UUID annotation
+            existing_uuid = document.annotation("chm_session_uuid")
+            
+            if existing_uuid and len(existing_uuid) > 0:
+                # Decode from bytes if necessary
+                if isinstance(existing_uuid, bytes):
+                    existing_uuid = existing_uuid.decode('utf-8')
+                
+                if self.DEBUG_LOG:
+                    uuid_snippet = existing_uuid[:16] + "..." if len(existing_uuid) > 16 else existing_uuid
+                    self._log(f"[UUID] Found existing UUID: {uuid_snippet}")
+                
+                return existing_uuid
+            
+            # No UUID found, generate new one
+            new_uuid = str(uuid.uuid4())
+            
+            # Store in document annotation
+            document.setAnnotation("chm_session_uuid", new_uuid, "")
+            
+            if self.DEBUG_LOG:
+                uuid_snippet = new_uuid[:16] + "..."
+                self._log(f"[UUID] Generated new UUID: {uuid_snippet}")
+            
+            return new_uuid
+            
+        except Exception as e:
+            # Fallback if annotation system fails
+            self._log(f"[UUID] ⚠️ Error accessing annotations: {e}")
+            self._log(f"[UUID] Falling back to id()-based key")
+            return None
+    
     def _get_document_key(self, document):
         """
         Get stable identifier for a document.
         
-        Uses fileName() if available (most stable), otherwise falls back to id().
-        This prevents session loss when Python creates new wrapper objects for same document.
+        Priority order:
+        1. UUID from document annotation (most stable, works for unsaved docs)
+        2. File path (for backward compatibility with existing saved docs)
+        3. Python object ID (fallback if both fail)
         
         Args:
             document: Krita document
@@ -29,14 +79,27 @@ class CHMSessionManager:
         Returns:
             str: Stable document identifier
         """
+        # Priority 1: Try UUID annotation (works for saved and unsaved)
+        doc_uuid = self._ensure_document_uuid(document)
+        if doc_uuid:
+            key = f"uuid_{doc_uuid}"
+            if self.DEBUG_LOG:
+                key_snippet = key[:24] + "..." if len(key) > 24 else key
+                self._log(f"[DOC-KEY] Using UUID key: {key_snippet}")
+            return key
+        
+        # Priority 2: Fallback to filepath for backward compatibility
         filepath = document.fileName()
         if filepath:
-            # Use filepath as stable key (same file = same key)
+            if self.DEBUG_LOG:
+                self._log(f"[DOC-KEY] Using filepath key (legacy): {filepath}")
             return filepath
-        else:
-            # Unsaved document: use Python object ID
-            # Note: This may change if document reference changes before save
-            return f"unsaved_{id(document)}"
+        
+        # Priority 3: Last resort - use Python object ID
+        fallback_key = f"unsaved_{id(document)}"
+        if self.DEBUG_LOG:
+            self._log(f"[DOC-KEY] ⚠️ Using fallback id() key: {fallback_key}")
+        return fallback_key
         
     def create_session(self, document, session_id=None):
         """
@@ -178,12 +241,13 @@ class CHMSessionManager:
         """
         Migrate a session from one key to another.
         
-        Used when document changes from unsaved to saved state.
-        This prevents session loss when a new document is saved for the first time.
+        NOTE: With UUID-based session keys, migration is no longer needed
+        since the UUID annotation persists through save operations.
+        This method is kept for backward compatibility with legacy filepath-based sessions.
         
         Args:
-            old_key: Current key (e.g., "unsaved_12345")
-            new_key: New key (e.g., "/path/to/file.kra")
+            old_key: Current key (e.g., "unsaved_12345" or filepath)
+            new_key: New key (e.g., "/path/to/file.kra" or "uuid_...")
         
         Returns:
             bool: True if migration successful, False otherwise

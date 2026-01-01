@@ -286,6 +286,8 @@ class EventCapture:
         - start_capture() for existing documents at plugin startup
         - on_image_created() for newly opened documents
         
+        Now works for both saved AND unsaved documents using UUID-based keys.
+        
         Args:
             doc: Krita document
             context: Description of when this is called (for logging)
@@ -305,80 +307,84 @@ class EventCapture:
         
         if self.session_storage:
             try:
+                # Get document key (UUID-based, works for saved and unsaved)
+                doc_key = self.session_manager._get_document_key(doc)
+                
+                self._log(f"[RESUME-3] Document key: {doc_key[:32]}...")
+                
                 filepath = doc.fileName()
-                
                 filepath_status = filepath if filepath else "None (unsaved document)"
-                self._log(f"[RESUME-3] Document filepath: {filepath_status}")
+                self._log(f"[RESUME-3a] Document filepath: {filepath_status}")
                 
-                if filepath:  # Existing file (not a new unsaved document)
-                    # Check if file exists on disk
+                # Determine session storage key based on document key type
+                session_key = None
+                
+                if doc_key.startswith("uuid_"):
+                    # UUID-based key - extract UUID for session storage
+                    session_key = doc_key[5:]  # Remove "uuid_" prefix
+                    self._log(f"[RESUME-4] Using UUID-based session key: {session_key[:16]}...")
+                elif filepath:
+                    # Legacy filepath-based key
                     file_exists = os.path.exists(filepath)
                     self._log(f"[RESUME-4] File exists on disk: {file_exists}")
                     
-                    if not file_exists:
-                        self._log(f"[RESUME-4a] ⚠️  File doesn't exist yet (might be newly created)")
-                    
-                    # Generate session key for this file
                     session_key = self.session_storage.get_session_key_for_file(filepath)
-                    
-                    key_status = f"{session_key[:16]}..." if session_key else "None"
-                    self._log(f"[RESUME-5] Session key generated: {key_status}")
-                    
                     if session_key:
-                        # Check if session file exists on disk
-                        session_file_path = self.session_storage._get_session_filepath(session_key)
-                        session_file_exists = os.path.exists(session_file_path)
-                        self._log(f"[RESUME-6] Session file exists: {session_file_exists}")
-                        self._log(f"[RESUME-6a] Session file path: {session_file_path}")
-                        
-                        # Try to load session from disk
-                        session_json = self.session_storage.load_session(session_key)
-                        
-                        json_status = f"{len(session_json)} bytes" if session_json else "None (not found)"
-                        self._log(f"[RESUME-7] Session JSON loaded: {json_status}")
-                        
-                        if session_json:
-                            # Resume existing session
-                            self._log(f"[RESUME-8] ✓ Found persisted session, importing...")
-                            
-                            # Show snippet of JSON for debugging
-                            json_snippet = session_json[:200] if len(session_json) > 200 else session_json
-                            self._log(f"[RESUME-8a] JSON snippet: {json_snippet}...")
-                            
-                            session = self.session_manager.import_session(doc, session_json)
-                            
-                            if session:
-                                self._log(f"[RESUME-9] ✅ Session resumed: {session.id} (events: {session.event_count})")
-                                
-                                # Update metadata with current values (in case they were null or changed)
-                                try:
-                                    import platform
-                                    session.set_metadata(
-                                        document_name=doc.name(),
-                                        canvas_width=doc.width(),
-                                        canvas_height=doc.height(),
-                                        krita_version=app.version(),
-                                        os_info=f"{platform.system()} {platform.release()}"
-                                    )
-                                    self._log(f"[RESUME-9a] ✓ Metadata updated with current values")
-                                except Exception as e:
-                                    self._log(f"[RESUME-9a] ⚠️ Error updating metadata: {e}")
-                                
-                                session_resumed = True
-                            else:
-                                self._log(f"[RESUME-9] ❌ Session import failed (import_session returned None)")
-                        else:
-                            self._log(f"[RESUME-8] No persisted session found (first time opening this file)")
-                            
-                            # List all session files to help debug
-                            all_sessions = self.session_storage.list_sessions()
-                            self._log(f"[RESUME-8a] Total session files on disk: {len(all_sessions)}")
-                            if all_sessions:
-                                self._log(f"[RESUME-8b] Session files: {all_sessions[:5]}...")  # Show first 5
-                    else:
-                        self._log(f"[RESUME-5] ❌ Could not generate session key (file doesn't exist?)")
+                        self._log(f"[RESUME-4a] Using filepath-based session key (legacy): {session_key[:16]}...")
                 else:
-                    self._log(f"[RESUME-4] Unsaved document, skipping resume attempt")
+                    self._log(f"[RESUME-4] ❌ Could not determine session key")
+                
+                if session_key:
+                    # Check if session file exists on disk
+                    session_file_path = self.session_storage._get_session_filepath(session_key)
+                    session_file_exists = os.path.exists(session_file_path)
+                    self._log(f"[RESUME-5] Session file exists: {session_file_exists}")
+                    self._log(f"[RESUME-5a] Session file path: {session_file_path}")
+                    
+                    # Try to load session from disk
+                    session_json = self.session_storage.load_session(session_key)
+                    
+                    json_status = f"{len(session_json)} bytes" if session_json else "None (not found)"
+                    self._log(f"[RESUME-6] Session JSON loaded: {json_status}")
+                    
+                    if session_json:
+                        # Resume existing session
+                        self._log(f"[RESUME-7] ✓ Found persisted session, importing...")
+                        
+                        # Show snippet of JSON for debugging
+                        json_snippet = session_json[:200] if len(session_json) > 200 else session_json
+                        self._log(f"[RESUME-7a] JSON snippet: {json_snippet}...")
+                        
+                        session = self.session_manager.import_session(doc, session_json)
+                        
+                        if session:
+                            self._log(f"[RESUME-8] ✅ Session resumed: {session.id} (events: {session.event_count})")
+                            
+                            # Update metadata with current values (in case they were null or changed)
+                            try:
+                                import platform
+                                session.set_metadata(
+                                    document_name=doc.name(),
+                                    canvas_width=doc.width(),
+                                    canvas_height=doc.height(),
+                                    krita_version=app.version(),
+                                    os_info=f"{platform.system()} {platform.release()}"
+                                )
+                                self._log(f"[RESUME-8a] ✓ Metadata updated with current values")
+                            except Exception as e:
+                                self._log(f"[RESUME-8a] ⚠️ Error updating metadata: {e}")
+                            
+                            session_resumed = True
+                        else:
+                            self._log(f"[RESUME-8] ❌ Session import failed (import_session returned None)")
+                    else:
+                        self._log(f"[RESUME-7] No persisted session found (first time opening this document)")
+                        
+                        # List all session files to help debug
+                        all_sessions = self.session_storage.list_sessions()
+                        self._log(f"[RESUME-7a] Total session files on disk: {len(all_sessions)}")
+                        if all_sessions:
+                            self._log(f"[RESUME-7b] Session files: {all_sessions[:5]}...")  # Show first 5
                 
             except Exception as e:
                 self._log(f"[RESUME-ERROR] ❌ Error during resumption: {e}")
@@ -426,6 +432,9 @@ class EventCapture:
         DRY helper called when session should be saved:
         - on_image_saved() - when user saves file (Ctrl+S)
         - on_image_closed() - when user closes file
+        - periodically during drawing (for unsaved documents)
+        
+        Now works for both saved AND unsaved documents using UUID-based keys.
         
         Args:
             doc: Krita document
@@ -440,24 +449,36 @@ class EventCapture:
             self._log(f"[PERSIST-1] ========== PERSIST SESSION ({context}) ==========")
             self._log(f"[PERSIST-2] Session ID: {session.id}, Events: {session.event_count}")
             
+            # Get document key (UUID-based, works for saved and unsaved)
+            doc_key = self.session_manager._get_document_key(doc)
+            
+            if not doc_key:
+                self._log(f"[PERSIST-3] ❌ Could not get document key")
+                return
+            
+            doc_name = doc.name() if doc.name() else "Untitled"
             filepath = doc.fileName()
             
-            if not filepath:
-                self._log(f"[PERSIST-3] ⚠️  Document has no filepath (unsaved), skipping")
+            self._log(f"[PERSIST-3] Document: {doc_name}")
+            self._log(f"[PERSIST-3a] Filepath: {filepath if filepath else 'None (unsaved)'}")
+            self._log(f"[PERSIST-3b] Document key: {doc_key[:32]}...")
+            
+            # For UUID-based keys, use the UUID as the session storage key
+            # For legacy filepath keys, generate hash-based key
+            if doc_key.startswith("uuid_"):
+                # Extract UUID from "uuid_XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
+                session_key = doc_key[5:]  # Remove "uuid_" prefix
+                self._log(f"[PERSIST-4] Using UUID-based session key: {session_key[:16]}...")
+            elif filepath:
+                # Legacy: Generate hash-based key from filepath
+                session_key = self.session_storage.get_session_key_for_file(filepath)
+                if not session_key:
+                    self._log(f"[PERSIST-4] ❌ Could not generate session key")
+                    return
+                self._log(f"[PERSIST-4] Using filepath-based session key (legacy): {session_key[:16]}...")
+            else:
+                self._log(f"[PERSIST-4] ❌ Unsaved document without UUID key")
                 return
-            
-            self._log(f"[PERSIST-3] Document: {doc.name()}")
-            self._log(f"[PERSIST-3a] Filepath: {filepath}")
-            
-            # Generate session key for this file
-            session_key = self.session_storage.get_session_key_for_file(filepath)
-            
-            if not session_key:
-                self._log(f"[PERSIST-4] ❌ Could not generate session key")
-                return
-            
-            key_snippet = f"{session_key[:16]}..."
-            self._log(f"[PERSIST-4] Session key: {key_snippet}")
             
             # Export session to JSON using session_manager helper
             self._log(f"[PERSIST-5] Serializing session...")
@@ -480,6 +501,7 @@ class EventCapture:
                 self._log(f"[PERSIST-8a] File: {session_file_path}")
                 self._log(f"[PERSIST-8b] Session ID: {session.id}")
                 self._log(f"[PERSIST-8c] Events saved: {session.event_count}")
+                self._log(f"[PERSIST-8d] Unsaved doc: {not filepath}")
             else:
                 self._log(f"[PERSIST-8] ❌ Save failed")
                 
