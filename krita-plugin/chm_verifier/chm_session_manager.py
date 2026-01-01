@@ -32,8 +32,14 @@ class CHMSessionManager:
             str: Document UUID (existing or newly generated)
         """
         try:
+            if self.DEBUG_LOG:
+                self._log(f"[UUID-CHECK] Checking UUID for document: {document.name()}")
+            
             # Check for existing UUID annotation
             existing_uuid = document.annotation("chm_session_uuid")
+            
+            if self.DEBUG_LOG:
+                self._log(f"[UUID-CHECK] annotation() returned: {type(existing_uuid)}, value: {existing_uuid}")
             
             if existing_uuid and len(existing_uuid) > 0:
                 # Decode from bytes if necessary
@@ -42,26 +48,52 @@ class CHMSessionManager:
                 
                 if self.DEBUG_LOG:
                     uuid_snippet = existing_uuid[:16] + "..." if len(existing_uuid) > 16 else existing_uuid
-                    self._log(f"[UUID] Found existing UUID: {uuid_snippet}")
+                    self._log(f"[UUID] ✓ Found existing UUID: {uuid_snippet}")
                 
                 return existing_uuid
             
             # No UUID found, generate new one
             new_uuid = str(uuid.uuid4())
             
-            # Store in document annotation
-            document.setAnnotation("chm_session_uuid", new_uuid, "")
-            
             if self.DEBUG_LOG:
-                uuid_snippet = new_uuid[:16] + "..."
-                self._log(f"[UUID] Generated new UUID: {uuid_snippet}")
+                self._log(f"[UUID] No existing UUID, generating new: {new_uuid[:16]}...")
+            
+            # Store in document annotation
+            # Try both as string and as bytes (Krita API may expect either)
+            try:
+                document.setAnnotation("chm_session_uuid", new_uuid, "")
+                if self.DEBUG_LOG:
+                    self._log(f"[UUID] ✓ setAnnotation() succeeded (string)")
+            except Exception as e1:
+                if self.DEBUG_LOG:
+                    self._log(f"[UUID] setAnnotation() failed with string, trying bytes: {e1}")
+                try:
+                    document.setAnnotation("chm_session_uuid", new_uuid.encode('utf-8'), "")
+                    if self.DEBUG_LOG:
+                        self._log(f"[UUID] ✓ setAnnotation() succeeded (bytes)")
+                except Exception as e2:
+                    self._log(f"[UUID] ⚠️ setAnnotation() failed with both string and bytes: {e2}")
+                    raise
+            
+            # Verify it was stored
+            verify_uuid = document.annotation("chm_session_uuid")
+            if verify_uuid:
+                if isinstance(verify_uuid, bytes):
+                    verify_uuid = verify_uuid.decode('utf-8')
+                if self.DEBUG_LOG:
+                    self._log(f"[UUID] ✓ Verified UUID stored: {verify_uuid[:16]}...")
+            else:
+                if self.DEBUG_LOG:
+                    self._log(f"[UUID] ⚠️ UUID not found after setAnnotation - annotation may not persist for unsaved docs")
             
             return new_uuid
             
         except Exception as e:
             # Fallback if annotation system fails
-            self._log(f"[UUID] ⚠️ Error accessing annotations: {e}")
-            self._log(f"[UUID] Falling back to id()-based key")
+            self._log(f"[UUID] ❌ Error accessing annotations: {e}")
+            import traceback
+            self._log(f"[UUID] Traceback: {traceback.format_exc()}")
+            self._log(f"[UUID] Falling back to None (will use filepath or id())")
             return None
     
     def _get_document_key(self, document):

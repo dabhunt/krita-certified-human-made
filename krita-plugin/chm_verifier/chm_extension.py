@@ -512,6 +512,7 @@ class CHMExtension(Extension):
         from krita import Krita
         from PyQt5.QtWidgets import QMessageBox
         from .session_info_dialog import SessionInfoDialog
+        import platform
         
         app = Krita.instance()
         doc = app.activeDocument()
@@ -524,15 +525,32 @@ class CHMExtension(Extension):
             )
             return
         
+        # Get or create session (proactive creation for unsaved documents)
         session = self.session_manager.get_session(doc)
         if not session:
-            QMessageBox.information(
-                None,
-                "CHM View Session",
-                f"No active session for document '{doc.name()}'.\n\n"
-                f"The session may not have been created yet. Try drawing something first."
-            )
-            return
+            self._log(f"[VIEW] No session found for document '{doc.name()}', creating new session...")
+            
+            # Create session proactively
+            session = self.session_manager.create_session(doc)
+            
+            # Set metadata
+            try:
+                session.set_metadata(
+                    document_name=doc.name(),
+                    canvas_width=doc.width(),
+                    canvas_height=doc.height(),
+                    krita_version=app.version(),
+                    os_info=f"{platform.system()} {platform.release()}"
+                )
+                self._log(f"[VIEW] ✓ Session created proactively: {session.id}")
+            except Exception as e:
+                self._log(f"[VIEW] ⚠️ Error setting metadata: {e}")
+            
+            # Log the document key for debugging
+            doc_key = self.session_manager._get_document_key(doc)
+            self._log(f"[VIEW] Document key: {doc_key[:32]}...")
+        else:
+            self._log(f"[VIEW] ✓ Found existing session: {session.id} ({session.event_count} events)")
         
         # Get comprehensive session info (without finalizing)
         # BUG#005 FIX: Use doc_key (session key) instead of doc_id

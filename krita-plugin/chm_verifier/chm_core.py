@@ -406,7 +406,7 @@ class CHMSession:
             "document_id": self.document_id,
             "start_time": self.start_time.isoformat(),
             "end_time": end_time.isoformat(),
-            "duration_seconds": duration,
+            "duration_seconds": round(duration),
             "drawing_time_secs": int(self.drawing_time_secs),  # BUG#008 FIX: Include drawing time in proof
             "event_summary": {
                 "total_events": len(self.events),
