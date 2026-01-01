@@ -1397,7 +1397,8 @@ class EventCapture:
                     
                     # BFROS DIAG-3: Check timing
                     if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
-                        self._log(f"[BFROS-DT-3] current_time={current_time:.2f}, last_time={last_time:.2f if last_time else 'None'}")
+                        last_time_display = f"{last_time:.2f}" if last_time else "None"
+                        self._log(f"[BFROS-DT-3] current_time={current_time:.2f}, last_time={last_time_display}")
                     
                     if last_time:
                         # Calculate elapsed time since last drawing poll
