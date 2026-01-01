@@ -1020,7 +1020,9 @@ class EventCapture:
         if not doc:
             return
         
-        doc_id = id(doc)
+        # DRY FIX: Use consistent document key (UUID-based for unsaved, filepath for saved)
+        # This ensures drawing time tracking works for unsaved documents
+        doc_id = self._get_doc_key(doc)
         
         # Poll layer changes
         self.poll_layer_changes(doc, doc_id)
