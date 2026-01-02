@@ -16,16 +16,14 @@ class CHMSessionManager:
     def __init__(self, debug_log=True):
         self.active_sessions = {}  # Map: stable_doc_key -> CHMSession
         self.DEBUG_LOG = debug_log
-        # CRITICAL FIX: Cache UUID per document object to ensure consistency
-        # Krita annotations may not persist reliably for unsaved documents
-        self._document_uuid_cache = {}  # doc object id() -> UUID string
     
     def _ensure_document_uuid(self, document):
         """
-        Ensure document has a stable UUID for session tracking.
+        Ensure document has a stable UUID annotation.
         
-        CRITICAL FIX: Use in-memory cache as primary source since Krita annotations
-        may not persist reliably for unsaved documents. Annotation is secondary/best-effort.
+        Generates and stores a UUID in the document's annotation if not present.
+        This UUID persists with the document and provides a stable identifier
+        that works even for unsaved documents.
         
         Args:
             document: Krita document
@@ -33,18 +31,15 @@ class CHMSessionManager:
         Returns:
             str: Document UUID (existing or newly generated)
         """
-        doc_id = id(document)
-        
-        # Priority 1: Check in-memory cache (most reliable)
-        if doc_id in self._document_uuid_cache:
-            cached_uuid = self._document_uuid_cache[doc_id]
-            if self.DEBUG_LOG:
-                self._log(f"[UUID] ✓ Found in cache: {cached_uuid[:16]}...")
-            return cached_uuid
-        
         try:
-            # Priority 2: Try to get from annotation (for persistence across Krita restarts)
+            if self.DEBUG_LOG:
+                self._log(f"[UUID-CHECK] Checking UUID for document: {document.name()}")
+            
+            # Check for existing UUID annotation
             existing_uuid = document.annotation("chm_session_uuid")
+            
+            if self.DEBUG_LOG:
+                self._log(f"[UUID-CHECK] annotation() returned: {type(existing_uuid)}, value: {existing_uuid}")
             
             if existing_uuid and len(existing_uuid) > 0:
                 # Decode from bytes if necessary
@@ -53,35 +48,53 @@ class CHMSessionManager:
                 
                 if self.DEBUG_LOG:
                     uuid_snippet = existing_uuid[:16] + "..." if len(existing_uuid) > 16 else existing_uuid
-                    self._log(f"[UUID] ✓ Found in annotation: {uuid_snippet}")
+                    self._log(f"[UUID] ✓ Found existing UUID: {uuid_snippet}")
                 
-                # Cache it for future lookups
-                self._document_uuid_cache[doc_id] = existing_uuid
                 return existing_uuid
             
+            # No UUID found, generate new one
+            new_uuid = str(uuid.uuid4())
+            
+            if self.DEBUG_LOG:
+                self._log(f"[UUID] No existing UUID, generating new: {new_uuid[:16]}...")
+            
+            # Store in document annotation
+            # Try both as string and as bytes (Krita API may expect either)
+            try:
+                document.setAnnotation("chm_session_uuid", new_uuid, "")
+                if self.DEBUG_LOG:
+                    self._log(f"[UUID] ✓ setAnnotation() succeeded (string)")
+            except Exception as e1:
+                if self.DEBUG_LOG:
+                    self._log(f"[UUID] setAnnotation() failed with string, trying bytes: {e1}")
+                try:
+                    document.setAnnotation("chm_session_uuid", new_uuid.encode('utf-8'), "")
+                    if self.DEBUG_LOG:
+                        self._log(f"[UUID] ✓ setAnnotation() succeeded (bytes)")
+                except Exception as e2:
+                    self._log(f"[UUID] ⚠️ setAnnotation() failed with both string and bytes: {e2}")
+                    raise
+            
+            # Verify it was stored
+            verify_uuid = document.annotation("chm_session_uuid")
+            if verify_uuid:
+                if isinstance(verify_uuid, bytes):
+                    verify_uuid = verify_uuid.decode('utf-8')
+                if self.DEBUG_LOG:
+                    self._log(f"[UUID] ✓ Verified UUID stored: {verify_uuid[:16]}...")
+            else:
+                if self.DEBUG_LOG:
+                    self._log(f"[UUID] ⚠️ UUID not found after setAnnotation - annotation may not persist for unsaved docs")
+            
+            return new_uuid
+            
         except Exception as e:
-            if self.DEBUG_LOG:
-                self._log(f"[UUID] ⚠️ Annotation read failed: {e}")
-        
-        # No existing UUID - generate new one
-        new_uuid = str(uuid.uuid4())
-        
-        if self.DEBUG_LOG:
-            self._log(f"[UUID] Generated new UUID: {new_uuid[:16]}...")
-        
-        # Cache it immediately (ensures consistency even if annotation fails)
-        self._document_uuid_cache[doc_id] = new_uuid
-        
-        # Try to store in annotation (best-effort, for persistence)
-        try:
-            document.setAnnotation("chm_session_uuid", new_uuid, "")
-            if self.DEBUG_LOG:
-                self._log(f"[UUID] ✓ Stored in annotation")
-        except Exception as e:
-            if self.DEBUG_LOG:
-                self._log(f"[UUID] ⚠️ Annotation write failed (will use cache only): {e}")
-        
-        return new_uuid
+            # Fallback if annotation system fails
+            self._log(f"[UUID] ❌ Error accessing annotations: {e}")
+            import traceback
+            self._log(f"[UUID] Traceback: {traceback.format_exc()}")
+            self._log(f"[UUID] Falling back to None (will use filepath or id())")
+            return None
     
     def _get_document_key(self, document):
         """
