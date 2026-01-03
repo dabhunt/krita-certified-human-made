@@ -267,7 +267,7 @@ class CHMExtension(Extension):
                 ai_plugins=ai_plugins_enabled,
                 ai_plugins_detected=len(ai_plugins_all) > 0,  # ← Track if any AI plugins exist (enabled or not)
                 for_export=True,  # ← Create snapshot, don't destroy active session
-                tracing_detector=self.event_capture.tracing_detector  # ← Pass tracing detector for MixedMedia check
+                import_tracker=self.event_capture.import_tracker  # ← Pass import tracker for MixedMedia check
             )
             
             if not proof:
@@ -562,8 +562,24 @@ class CHMExtension(Extension):
         
         # Count events by type
         stroke_count = sum(1 for e in session.events if e.get("type") == "stroke")
-        layer_count = sum(1 for e in session.events if e.get("type") in ["layer_created", "layer_added"])
         import_count = sum(1 for e in session.events if e.get("type") == "import")
+        
+        # Count ACTUAL layers in document (not just events)
+        layer_count = 0
+        try:
+            def count_all_layers(node):
+                """Recursively count all layers"""
+                count = 1  # Count this node
+                for child in node.childNodes():
+                    count += count_all_layers(child)
+                return count
+            
+            for top_node in doc.topLevelNodes():
+                layer_count += count_all_layers(top_node)
+        except Exception as e:
+            self._log(f"[VIEW-DEBUG] Error counting layers: {e}")
+            # Fallback to event count if layer counting fails
+            layer_count = sum(1 for e in session.events if e.get("type") in ["layer_created", "layer_added"])
         
         self._log(f"[VIEW-DEBUG] Counted: strokes={stroke_count}, layers={layer_count}, imports={import_count}")
         
@@ -571,7 +587,7 @@ class CHMExtension(Extension):
         classification = session._classify(
             doc=doc,
             doc_key=doc_key,
-            tracing_detector=self.event_capture.tracing_detector
+            import_tracker=self.event_capture.import_tracker
         )
         
         # Get tracing info
@@ -582,10 +598,10 @@ class CHMExtension(Extension):
         ai_tools_used = session.metadata.get("ai_tools_used", False)
         ai_tools_list = session.metadata.get("ai_tools_list", [])
         
-        # Check if imports are visible (MixedMedia check)
+        # Check if document has Mixed Media (any imports registered - sticky)
         imports_visible = None
         if import_count > 0:
-            imports_visible = self.event_capture.tracing_detector.check_mixed_media(doc, doc_key)
+            imports_visible = self.event_capture.import_tracker.has_mixed_media(doc_key)
         
         # Get time metrics
         session_duration = session.duration_secs if hasattr(session, 'duration_secs') else 0
@@ -659,7 +675,7 @@ class CHMExtension(Extension):
             proof = self.session_manager.finalize_session(
                 doc,
                 ai_plugins=ai_plugins,
-                tracing_detector=self.event_capture.tracing_detector
+                import_tracker=self.event_capture.import_tracker
             )
             
             if not proof:

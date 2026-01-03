@@ -2,33 +2,14 @@
 Event Capture
 
 Captures Krita events (strokes, layers, imports) and records them to CHM sessions.
-
-IMPLEMENTATION NOTE (Dec 28, 2025 - BFROS CONCLUSION):
-After systematic testing (ROAA/BFROS sessions), we confirmed:
-
-❌ FAILED APPROACHES:
-1. view.strokeBegin/strokeEnd - NOT exposed through PyQt5 SIP wrappers
-2. canvas.pointerPress/pointerRelease - NOT exposed (hasattr returns False)
-3. Qt Event Filter on QOpenGLWidget - Filters VIEWPORT (1938x781), not document (500x500)
-   - QOpenGLWidget is the display renderer, NOT the input canvas
-   - Drawing events don't pass through the GL widget
-
-✅ WORKING SOLUTION (per krita-api-research.md):
-- **Document modification polling** via `doc.modified()` flag
-- Poll every 500ms to detect drawing activity
-- Simple, reliable, works with all tools
-
-Based on Krita API research (docs/krita-api-research.md):
-- Stroke events: Document modification polling (strokeBegin/End unavailable via SIP)
-- Document events: notifier.imageSaved, imageClosed, imageCreated (working)
-- Layer events: Polling-based detection (nodeCreated signal poorly documented)
 """
+
 
 from krita import Krita
 from PyQt5.QtCore import QTimer, QObject, QEvent, Qt
 from PyQt5.QtWidgets import QOpenGLWidget, QWidget
 import time
-from .tracing_detector import TracingDetector
+from .import_tracker import ImportTracker
 
 
 class CanvasEventFilter(QObject):
@@ -187,13 +168,16 @@ class EventCapture:
         self.active_poll_count = {}  # doc_id -> int (number of polls user was actively drawing)
         
         # Tracing Detection: Perceptual hash comparison
-        self.tracing_detector = TracingDetector(debug_log=debug_log)
+        self.import_tracker = ImportTracker(debug_log=debug_log)
         
         # BUG#003 FIX: Delayed import detection for paste operations
         # Paste may create layer before pixels are loaded - need delayed check
         self.pending_import_checks = {}  # doc_key -> [(layer_name, check_count)]
         # BUG#006 FIX: Increased timeout for SVG and complex imports
         self.IMPORT_CHECK_DELAY = 6  # Check for 6 polls (3 seconds) after layer creation
+        
+        # BFROS FIX: Track which documents have been scanned for imports (scan once per doc)
+        self.scanned_documents = set()  # Set of doc_keys that have been scanned
     
     def _get_doc_key(self, doc):
         """
@@ -422,6 +406,17 @@ class EventCapture:
                 self._log(f"[RESUME-10] ❌ ERROR creating session: {e}")
                 import traceback
                 self._log(f"[RESUME-10] Traceback: {traceback.format_exc()}")
+        
+        # BFROS FIX: Scan all existing layers for imports
+        # This catches layers that were added before polling started (e.g., drag-drop during file open)
+        try:
+            doc_key = self.session_manager._get_document_key(doc)
+            self._log(f"[RESUME-12] Scanning existing layers for imports...")
+            self.scan_all_layers_for_imports(doc, doc_key)
+        except Exception as e:
+            self._log(f"[RESUME-12] ❌ Error scanning layers: {e}")
+            import traceback
+            self._log(f"[RESUME-12] Traceback: {traceback.format_exc()}")
         
         return session_resumed
     
@@ -817,15 +812,43 @@ class EventCapture:
         
         self._log(f"Document saved: {doc.name()}")
         
-        # CRITICAL BUG#002 FIX: Migrate session key if document was just saved for first time
-        # When a new unsaved document is saved, the key changes from "unsaved_ID" to filepath
-        # We need to migrate the session from old key to new key to prevent session loss
+        # CRITICAL BUG#002 FIX: Migrate session AND import_tracker keys when document is saved
+        # Key migration happens when: unsaved doc → saved doc (key changes from unsaved_ID or uuid_X to filepath)
         filepath = doc.fileName()
         if filepath:
+            # Get current doc_key (what it will be AFTER save - should be filepath or UUID)
+            new_key = self.session_manager._get_document_key(doc)
+            
+            # Try to find old key in import_tracker by checking all possible old key formats
+            old_key_candidates = [
+                f"unsaved_{id(doc)}",  # Legacy unsaved key
+                # We can't easily get the old UUID key, so we'll just copy to new key
+            ]
+            
+            # Migrate session
             unsaved_key = f"unsaved_{id(doc)}"
-            if self.session_manager.migrate_session_key(unsaved_key, filepath):
+            if self.session_manager.migrate_session_key(unsaved_key, new_key):
                 if self.DEBUG_LOG:
-                    self._log(f"[SAVE-MIGRATE] ✅ Session migrated to filepath: {filepath}")
+                    self._log(f"[SAVE-MIGRATE] ✅ Session migrated: {unsaved_key} → {new_key}")
+            
+            # BFROS FIX: Migrate import_tracker data for ALL possible old keys
+            migrated = False
+            for old_key in list(self.import_tracker.has_imports.keys()):
+                # If old key is not the new key and starts with "unsaved_" or "uuid_"
+                if old_key != new_key and (old_key.startswith("unsaved_") or old_key.startswith("uuid_")):
+                    # Check if this might be the same document (by ID)
+                    if old_key == unsaved_key or old_key.startswith("uuid_"):
+                        has_import = self.import_tracker.has_imports[old_key]
+                        self.import_tracker.has_imports[new_key] = has_import
+                        # Keep old key too for safety
+                        migrated = True
+                        if self.DEBUG_LOG:
+                            old_key_display = old_key[:32] + "..." if len(old_key) > 32 else old_key
+                            self._log(f"[SAVE-MIGRATE] ✅ Import tracker migrated: {old_key_display} → {new_key} (has_import={has_import})")
+                        break  # Only migrate first match
+            
+            if not migrated and self.DEBUG_LOG:
+                self._log(f"[SAVE-MIGRATE] No import tracker data to migrate (current keys: {list(self.import_tracker.has_imports.keys())})")
         
         # Update session metadata with current document name
         session = self.session_manager.get_session(doc)
@@ -1024,6 +1047,13 @@ class EventCapture:
         # This ensures drawing time tracking works for unsaved documents
         doc_id = self._get_doc_key(doc)
         
+        # BFROS FIX: Scan for imports on first poll (ensures ALL documents get scanned)
+        if doc_id not in self.scanned_documents:
+            self.scanned_documents.add(doc_id)
+            if self.DEBUG_LOG:
+                self._log(f"[POLL-SCAN] First poll for doc, scanning for existing imports...")
+            self.scan_all_layers_for_imports(doc, doc_id)
+        
         # Poll layer changes
         self.poll_layer_changes(doc, doc_id)
         
@@ -1032,6 +1062,115 @@ class EventCapture:
         
         # Poll document modification (PRIMARY stroke detection)
         self.poll_document_modification(doc, doc_id)
+    
+    def _check_layer_for_import(self, doc, doc_key, node, session):
+        """
+        Simple bulletproof import detection:
+        If a new layer already has pixel data, it's an import.
+        """
+        try:
+            layer_name = node.name()
+            layer_type = node.type()
+            
+            is_import = False
+            import_type = "unknown"
+            
+            if self.DEBUG_LOG:
+                self._log(f"[IMPORT-CHECK] ========================================")
+                self._log(f"[IMPORT-CHECK] Checking layer: {layer_name}")
+                self._log(f"[IMPORT-CHECK]   Type: {layer_type}")
+            
+            # Simple rule: If layer has data, it's an import
+            # Empty layers created manually won't have bounds
+            try:
+                bounds = node.bounds()
+                has_data = bounds and bounds.width() > 0 and bounds.height() > 0
+                
+                if self.DEBUG_LOG:
+                    bounds_str = f"{bounds.width()}x{bounds.height()}" if has_data else "None/Empty"
+                    self._log(f"[IMPORT-CHECK]   Bounds: {bounds_str}")
+                
+                if has_data:
+                    # Layer has data - it's an import!
+                    is_import = True
+                    import_type = f"{layer_type}_with_data"
+                    
+                    if self.DEBUG_LOG:
+                        self._log(f"[IMPORT-CHECK] ✓ Layer has data ({bounds.width()}x{bounds.height()}) → IMPORT")
+                else:
+                    if self.DEBUG_LOG:
+                        self._log(f"[IMPORT-CHECK] ✗ Layer is empty → NOT IMPORT")
+                        
+            except Exception as e:
+                self._log(f"[IMPORT-CHECK] Could not check bounds: {e}")
+            
+            # Register import if detected
+            if is_import:
+                if self.DEBUG_LOG:
+                    self._log(f"[IMPORT-CHECK] Recording as import...")
+                
+                # Register with import tracker first (checks for duplicates)
+                is_new_import = self.import_tracker.register_import(
+                    doc_key=doc_key,
+                    layer_node=node,
+                    layer_name=layer_name
+                )
+                
+                # Only record in session if it's a NEW import (prevent duplicates)
+                if is_new_import:
+                    session.record_import(
+                        file_path=layer_name,
+                        import_type=import_type,
+                        timestamp=time.time()
+                    )
+                    self._log(f"[IMPORT] ✓ Import detected: {layer_name} (type: {import_type})")
+                else:
+                    self._log(f"[IMPORT] ⚠️  Duplicate import skipped: {layer_name}")
+            
+            if self.DEBUG_LOG:
+                self._log(f"[IMPORT-CHECK] ========================================")
+                
+        except Exception as e:
+            self._log(f"[IMPORT-CHECK] ❌ Error: {e}")
+            import traceback
+            self._log(f"[IMPORT-CHECK] Traceback: {traceback.format_exc()}")
+    
+    def scan_all_layers_for_imports(self, doc, doc_key):
+        """
+        BFROS FIX: Scan ALL existing layers for imports.
+        Called when session is created to catch layers added before polling started.
+        """
+        try:
+            if self.DEBUG_LOG:
+                self._log(f"[SCAN-ALL-LAYERS] ========================================")
+                self._log(f"[SCAN-ALL-LAYERS] Scanning all existing layers for imports...")
+            
+            session = self.session_manager.get_session(doc)
+            if not session:
+                if self.DEBUG_LOG:
+                    self._log(f"[SCAN-ALL-LAYERS] No session found, skipping scan")
+                return
+            
+            # Get all top-level nodes
+            nodes_to_check = []
+            for node in doc.topLevelNodes():
+                nodes_to_check.append(node)
+            
+            if self.DEBUG_LOG:
+                self._log(f"[SCAN-ALL-LAYERS] Found {len(nodes_to_check)} layers to check")
+            
+            # Check each node
+            for node in nodes_to_check:
+                self._check_layer_for_import(doc, doc_key, node, session)
+            
+            if self.DEBUG_LOG:
+                self._log(f"[SCAN-ALL-LAYERS] ✓ Scan complete")
+                self._log(f"[SCAN-ALL-LAYERS] ========================================")
+                
+        except Exception as e:
+            self._log(f"[SCAN-ALL-LAYERS] ❌ Error: {e}")
+            import traceback
+            self._log(f"[SCAN-ALL-LAYERS] Traceback: {traceback.format_exc()}")
     
     def poll_layer_changes(self, doc, doc_id):
         """Poll for layer changes"""
@@ -1079,113 +1218,9 @@ class EventCapture:
                             )
                             self._log(f"[LAYER-ADD] Layer added: {layer_name} (type: {layer_type})")
                             
-                            # BUG#006 FIX: Enhanced diagnostic logging for layer detection
-                            if self.DEBUG_LOG:
-                                try:
-                                    bounds = node.bounds()
-                                    bounds_info = f"{bounds.width()}x{bounds.height()}" if bounds else "None"
-                                    self._log(f"[BUG006-DIAG] Layer: {layer_name}")
-                                    self._log(f"[BUG006-DIAG]   Type: {layer_type}")
-                                    self._log(f"[BUG006-DIAG]   Bounds: {bounds_info}")
-                                    self._log(f"[BUG006-DIAG]   Visible: {node.visible()}")
-                                except Exception as e:
-                                    self._log(f"[BUG006-DIAG] Could not get diagnostics: {e}")
-                            
-                            # BFROS FIX: Detect imports by checking if layer has pixel data
-                            # Copy-paste creates "paintlayer" with imported pixels, NOT "filelayer"!
-                            # We need to detect ANY layer that might contain imported content
-                            is_import = False
-                            import_type = "unknown"
-                            
-                            # Method 1: Check if it's a file layer (File → Import Layer)
-                            if layer_type == "filelayer":
-                                is_import = True
-                                import_type = "file_layer"
-                                self._log(f"[IMPORT-DETECT] File layer: {layer_name}")
-                            
-                            # BUG#006 FIX: Method 1b - Check if it's a vector layer (SVG, etc.)
-                            elif layer_type == "vectorlayer":
-                                is_import = True
-                                import_type = "vector_layer"
-                                self._log(f"[IMPORT-DETECT] Vector layer: {layer_name}")
-                            
-                            # BUG#006 FIX: Method 1c - Check if it's a group layer (complex imports like SVG)
-                            elif layer_type == "grouplayer":
-                                # Group layers can be created by importing complex files
-                                # Check if the group name suggests it's an import
-                                is_import = True
-                                import_type = "group_layer"
-                                self._log(f"[IMPORT-DETECT] Group layer (possible import): {layer_name}")
-                            
-                            # Method 2: Check if it's a paint layer with suspicious characteristics
-                            # (likely pasted image)
-                            elif layer_type == "paintlayer":
-                                # BUG#003 FIX: Paste may create layer before pixels load
-                                # Check immediately, but also add to pending checks for delayed verification
-                                try:
-                                    # Get layer bounds to see if it has content
-                                    bounds = node.bounds()
-                                    if bounds and bounds.width() > 0 and bounds.height() > 0:
-                                        # Layer has content immediately - definitely imported
-                                        is_import = True
-                                        import_type = "paste_immediate"
-                                        self._log(f"[IMPORT-DETECT] Paint layer with immediate content: {layer_name} ({bounds.width()}x{bounds.height()})")
-                                    else:
-                                        # No bounds yet - may be paste operation loading pixels
-                                        # Add to pending checks for delayed verification
-                                        self._log(f"[IMPORT-DETECT] Paint layer with no bounds yet: {layer_name} - adding to pending checks")
-                                        
-                                        # BUG#005 FIX: Use doc_key for pending checks
-                                        doc_key = self._get_doc_key(doc)
-                                        
-                                        if doc_key not in self.pending_import_checks:
-                                            self.pending_import_checks[doc_key] = []
-                                        
-                                        self.pending_import_checks[doc_key].append({
-                                            'layer_name': layer_name,
-                                            'node': node,
-                                            'checks_remaining': self.IMPORT_CHECK_DELAY
-                                        })
-                                except Exception as e:
-                                    self._log(f"[IMPORT-DETECT] Could not check bounds: {e}")
-                            
-                            # BUG#006 FIX: Method 3 - Extension-based fallback detection
-                            # If not detected by layer type, check layer name for image extensions
-                            if not is_import:
-                                IMPORT_EXTENSIONS = [
-                                    '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', 
-                                    '.bmp', '.tif', '.tiff', '.psd', '.ora', '.exr'
-                                ]
-                                layer_lower = layer_name.lower()
-                                
-                                for ext in IMPORT_EXTENSIONS:
-                                    if ext in layer_lower:
-                                        is_import = True
-                                        import_type = "file_import_by_extension"
-                                        if self.DEBUG_LOG:
-                                            self._log(f"[IMPORT-DETECT] Import detected by extension '{ext}' in name: {layer_name}")
-                                        break
-                            
-                            # If detected as import, record it
-                            if is_import:
-                                # Record as import
-                                session.record_import(
-                                    file_path=layer_name,  # Use layer name as placeholder
-                                    import_type=import_type,
-                                    timestamp=time.time()
-                                )
-                                
-                                # BUG#005 FIX: Use doc_key instead of doc_id
-                                doc_key = self._get_doc_key(doc)
-                                
-                                # Register with tracing detector
-                                self.tracing_detector.register_import(
-                                    doc_key=doc_key,
-                                    layer_node=node,
-                                    layer_name=layer_name
-                                )
-                                
-                                self._log(f"[IMPORT] ✓ Import detected: {layer_name} (type: {import_type})")
+                            # Simple import detection: layer with data = import
+                            doc_key = self._get_doc_key(doc)
+                            self._check_layer_for_import(doc, doc_key, node, session)
                     except Exception as e:
                         self._log(f"[LAYER-ADD] Error recording layer: {e}")
                         import traceback
@@ -1248,8 +1283,8 @@ class EventCapture:
                     # BUG#005 FIX: Use doc_key instead of doc_id
                     doc_key = self._get_doc_key(doc)
                     
-                    # Register with tracing detector
-                    self.tracing_detector.register_import(
+                    # Register with import tracker (marks as Mixed Media - STICKY)
+                    self.import_tracker.register_import(
                         doc_key=doc_key,
                         layer_node=current_node,
                         layer_name=layer_name
@@ -1534,13 +1569,8 @@ class EventCapture:
                         self._log(f"[AFK-DIAG-12b] ✓ Stroke recorded! Event count AFTER: {session.event_count}")
                         self._log(f"[AFK-DIAG-12c] Session duration after recording: {session.duration_secs}s")
                     
-                    # BUG#005 FIX: Use doc_key instead of doc_id
-                    doc_key = self._get_doc_key(doc)
-                    
-                    # Check for tracing (every N strokes for efficiency)
-                    tracing_percentage = self.tracing_detector.check_for_tracing(doc, doc_key, session)
-                    if tracing_percentage is not None:
-                        self._log(f"[FLOW-2-TRACE] ⚠️  TRACING DETECTED: {tracing_percentage*100:.1f}%")
+                    # Note: Tracing detection removed (Jan 3, 2026)
+                    # Mixed Media is now simply based on import registration (sticky)
                 else:
                     if self.DEBUG_LOG:
                         self._log(f"[FLOW-ERROR] ❌ Could not create or find session for document {doc.name()}!")

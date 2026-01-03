@@ -255,11 +255,13 @@ class CHMSession:
         """
         Classify the session based on events and metadata.
         
-        Classification Logic (Dec 30, 2025):
-        - HumanMade: Pure manual work, references ALLOWED (as long as not traced/visible)
-        - MixedMedia: Imported images visible in final export (but not traced)
+        Classification Logic (Updated Jan 3, 2026):
+        - HumanMade: Pure manual work, reference imports ALLOWED
+        - MixedMedia: Any non-reference image imports (STICKY - even if deleted)
         - AI-Assisted: AI tools detected in metadata
-        - Traced: High % of traced content (>33% edge correlation) - STICKY
+        
+        Note: Tracing classification removed - was too complex and inaccurate.
+        This is a fallback implementation (Rust library not available).
         
         Returns:
             Classification string
@@ -269,21 +271,15 @@ class CHMSession:
         if ai_tools_used:
             return "AI-Assisted"
         
-        # Priority 2: Check for tracing (STICKY - once traced, always traced)
-        tracing_detected = self.metadata.get("tracing_detected", False)
-        if tracing_detected:
-            return "Traced"
-        
-        # Priority 3: Check for visible imports in final export (MixedMedia)
-        # Placeholder heuristic: if imports exist but very few strokes, likely MixedMedia
+        # Priority 2: Check for image imports (MixedMedia)
+        # Note: Fallback doesn't have access to ImportTracker, so we check events
+        # Any import event = Mixed Media
         has_imports = any(e.get("type") == "import" for e in self.events)
-        has_strokes = any(e.get("type") == "stroke" for e in self.events)
-        stroke_count = sum(1 for e in self.events if e.get("type") == "stroke")
-        
-        if has_imports and stroke_count < 10:
+        if has_imports:
             return "MixedMedia"
         
-        # Default: HumanMade (includes references as long as not traced/visible!)
+        # Default: HumanMade
+        # Reference imports are ALLOWED and don't affect this classification
         return "HumanMade"
 
 

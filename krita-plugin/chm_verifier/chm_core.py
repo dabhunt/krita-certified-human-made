@@ -289,31 +289,7 @@ class CHMSession:
         """Get session ID"""
         return self.session_id
     
-    def mark_as_traced(self, tracing_percentage: float):
-        """
-        Mark session as traced (STICKY - cannot be undone).
-        
-        Once a session is marked as traced, it cannot be unmarked.
-        This prevents users from gaming the system by editing after tracing.
-        
-        Args:
-            tracing_percentage: Percentage of traced content (0.0-1.0)
-        """
-        if self.finalized:
-            raise RuntimeError("Cannot mark finalized session as traced")
-        
-        # STICKY: Once traced, always traced (even if percentage decreases later)
-        current_traced = self.metadata.get("tracing_detected", False)
-        if not current_traced:
-            self.metadata["tracing_detected"] = True
-            self.metadata["tracing_percentage"] = tracing_percentage
-            print(f"[TRACING] ⚠️  Session marked as TRACED ({tracing_percentage*100:.1f}% traced content)")
-        else:
-            # Already traced, just update percentage if higher
-            old_percentage = self.metadata.get("tracing_percentage", 0.0)
-            if tracing_percentage > old_percentage:
-                self.metadata["tracing_percentage"] = tracing_percentage
-                print(f"[TRACING] ⚠️  Tracing percentage updated: {old_percentage*100:.1f}% → {tracing_percentage*100:.1f}%")
+    # NOTE: mark_as_traced() removed Jan 3, 2026 - tracing classification no longer used
     
     def mark_ai_assisted(self, tool_name: str = "Unknown"):
         """
@@ -332,7 +308,7 @@ class CHMSession:
         self.metadata["ai_tools_list"] = ai_tools
         print(f"[AI-ASSISTED] 🤖 Session marked as AI-Assisted (tool: {tool_name})")
     
-    def finalize(self, artwork_path: Optional[str] = None, doc=None, doc_key: Optional[str] = None, tracing_detector=None) -> 'CHMProof':
+    def finalize(self, artwork_path: Optional[str] = None, doc=None, doc_key: Optional[str] = None, import_tracker=None) -> 'CHMProof':
         """
         Finalize the session and generate a proof summary.
         
@@ -393,8 +369,8 @@ class CHMSession:
             sys.stdout.flush()
         
         # BUG#005 FIX: Pass doc_key instead of doc_id
-        # Classify session (pass tracing detector for MixedMedia check)
-        classification = self._classify(doc=doc, doc_key=doc_key, tracing_detector=tracing_detector)
+        # Classify session (pass import tracker for MixedMedia check)
+        classification = self._classify(doc=doc, doc_key=doc_key, import_tracker=import_tracker)
         
         print(f"[FLOW-3d] 🏷️ Classification: {classification}")
         sys.stdout.flush()
@@ -420,7 +396,6 @@ class CHMSession:
             "file_hash": file_hash if file_hash else "placeholder_no_artwork_provided",
             "classification": classification,
             "import_count": import_count,  # Track as separate metric (not part of classification)
-            "tracing_percentage": self.metadata.get("tracing_percentage", 0.0),  # Actual tracing % from detector
             "metadata": self.metadata
         }
         
@@ -477,53 +452,56 @@ class CHMSession:
         
         return snapshot
     
-    def _classify(self, doc=None, doc_key: Optional[str] = None, tracing_detector=None) -> str:
+    def _classify(self, doc=None, doc_key: Optional[str] = None, import_tracker=None) -> str:
         """
         Classify the session based on events and metadata.
         
-        Classification Logic (Dec 30, 2025):
-        - HumanMade: Pure manual work, references ALLOWED (as long as not traced/visible)
-        - MixedMedia: Imported images visible in final export (but not traced)
+        Classification Logic (Updated Jan 3, 2026):
+        - HumanMade: Pure manual work, reference imports ALLOWED
+        - MixedMedia: Any non-reference image imports (STICKY - even if deleted)
         - AI-Assisted: AI tools detected in metadata
-        - Traced: High % of traced content (>33% edge correlation) - STICKY
         
-        BUG#005 FIX: Uses doc_key (session key) instead of doc_id for consistency.
+        Note: Tracing classification removed - was too complex and inaccurate.
         
         Args:
-            doc: Krita document (optional, for MixedMedia detection)
+            doc: Krita document (optional, for future use)
             doc_key: Document key from session manager (optional, for MixedMedia detection)
-            tracing_detector: TracingDetector instance (optional, for MixedMedia detection)
+            import_tracker: ImportTracker instance (optional, for MixedMedia detection)
         
         Returns:
             Classification string
         """
+        print(f"[CLASSIFY-BFROS] ========================================")
+        print(f"[CLASSIFY-BFROS] _classify() called")
+        print(f"[CLASSIFY-BFROS]   doc_key: {doc_key}")
+        print(f"[CLASSIFY-BFROS]   import_tracker: {import_tracker}")
+        print(f"[CLASSIFY-BFROS]   has import_tracker: {import_tracker is not None}")
+        
         # Priority 1: Check for AI tools in metadata
         ai_tools_used = self.metadata.get("ai_tools_used", False)
+        print(f"[CLASSIFY-BFROS]   ai_tools_used: {ai_tools_used}")
         if ai_tools_used:
+            print(f"[CLASSIFY-BFROS] Result: AI-Assisted")
+            print(f"[CLASSIFY-BFROS] ========================================")
             return "AI-Assisted"
         
-        # Priority 2: Check for tracing (STICKY - once traced, always traced)
-        tracing_detected = self.metadata.get("tracing_detected", False)
-        if tracing_detected:
-            return "Traced"
+        # Priority 2: Check for image imports (STICKY - MixedMedia)
+        # Any import registered = Mixed Media (persists even if deleted)
+        if import_tracker and doc_key:
+            print(f"[CLASSIFY-BFROS]   Checking import_tracker.has_mixed_media({doc_key})...")
+            has_mixed = import_tracker.has_mixed_media(doc_key)
+            print(f"[CLASSIFY-BFROS]   has_mixed_media result: {has_mixed}")
+            if has_mixed:
+                print(f"[CLASSIFY-BFROS] Result: MixedMedia")
+                print(f"[CLASSIFY-BFROS] ========================================")
+                return "MixedMedia"
+        else:
+            print(f"[CLASSIFY-BFROS]   Skipping import check (import_tracker={import_tracker}, doc_key={doc_key})")
         
-        # Priority 3: Check for visible imports in final export (MixedMedia)
-        has_imports = any(e.get("type") == "import" for e in self.events)
-        
-        if has_imports:
-            # Use tracing detector to check if imports are visible
-            if tracing_detector and doc and doc_key:
-                is_mixed_media = tracing_detector.check_mixed_media(doc, doc_key)
-                if is_mixed_media:
-                    return "MixedMedia"
-            else:
-                # Fallback heuristic: If imports exist but very few strokes (< 10), likely MixedMedia
-                stroke_count = sum(1 for e in self.events if e.get("type") == "stroke")
-                if stroke_count < 10:
-                    return "MixedMedia"
-        
-        # Default: HumanMade (includes references as long as not traced/visible!)
-        # References are ALLOWED and don't disqualify HumanMade classification
+        # Default: HumanMade
+        # Reference imports are ALLOWED and don't affect this classification
+        print(f"[CLASSIFY-BFROS] Result: HumanMade (default)")
+        print(f"[CLASSIFY-BFROS] ========================================")
         return "HumanMade"
 
 

@@ -82,7 +82,7 @@ class SessionInfoDialog(QDialog):
         
         activity_layout.addRow("Total Events:", self.total_events_label)
         activity_layout.addRow("Brush Strokes:", self.strokes_label)
-        activity_layout.addRow("Layers Added:", self.layers_label)
+        activity_layout.addRow("Total Layers:", self.layers_label)
         activity_layout.addRow("Images Imported:", self.imports_label)
         activity_group.setLayout(activity_layout)
         layout.addWidget(activity_group)
