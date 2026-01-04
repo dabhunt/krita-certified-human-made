@@ -339,6 +339,13 @@ class TripleTimestampService:
                 
                 self._log(f"[GITHUB] ✓ Gist created: {result.get('html_url', 'unknown')}")
                 
+                # BUG#009 DEBUG: Log what hash was stored in the gist
+                if proof_dict:
+                    stored_hash = gist_content.get('proof_details', {}).get('file_hash', 'MISSING')
+                    self._log(f"[GITHUB-DEBUG] File hash stored in gist: {stored_hash[:40] if stored_hash != 'MISSING' else 'MISSING'}...")
+                    self._log(f"[GITHUB-DEBUG] Classification: {gist_content.get('proof_details', {}).get('classification', 'MISSING')}")
+                    self._log(f"[GITHUB-DEBUG] Session ID: {gist_content.get('proof_details', {}).get('session_id', 'MISSING')}")
+                
                 return {
                     'url': result['html_url'],
                     'commit_sha': result['history'][0]['version'] if result.get('history') else None,

@@ -151,6 +151,8 @@ Encrypted Session → SHA-256 Hash → Triple Timestamp
 - **[Krita API Research](docs/krita-api-research.md)**: How event capture works
 - **[Phase 0 Report](docs/phase0-completion-report.md)**: Development progress
 - **[Security Model](docs/security-model.md)**: Threat model & mitigations
+- **[Tamper Resistance Testing](docs/tamper-resistance-testing-guide.md)**: Manual testing guide
+- **[Automated Test Suite](tests/README-TAMPER-TESTS.md)**: Automated security tests
 
 ---
 
@@ -188,6 +190,12 @@ cargo test --ignored
 
 # Python bindings test
 ./tests/test_python_bindings.sh
+
+# Tamper resistance tests (automated security tests)
+./tests/run-tamper-tests.sh
+
+# Run with coverage
+./tests/ci-tamper-tests.sh --coverage
 ```
 
 ### Project Structure

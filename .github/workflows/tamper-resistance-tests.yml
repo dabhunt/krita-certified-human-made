@@ -1,0 +1,70 @@
+name: Tamper Resistance Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'krita-plugin/chm_verifier/**'
+      - 'tests/test_tamper_resistance.py'
+      - 'tests/run-tamper-tests.sh'
+      - '.github/workflows/tamper-resistance-tests.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'krita-plugin/chm_verifier/**'
+      - 'tests/test_tamper_resistance.py'
+      - 'tests/run-tamper-tests.sh'
+      - '.github/workflows/tamper-resistance-tests.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Run Tamper Resistance Tests
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
+      fail-fast: false
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install coverage
+    
+    - name: Run test suite
+      run: |
+        python3 tests/test_tamper_resistance.py
+    
+    - name: Generate coverage report
+      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+      run: |
+        coverage run --source=krita-plugin/chm_verifier tests/test_tamper_resistance.py
+        coverage report -m
+        coverage html
+    
+    - name: Upload coverage report
+      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-report
+        path: htmlcov/
+    
+    - name: Test summary
+      if: always()
+      run: |
+        echo "### Test Results :rocket:" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "- OS: ${{ matrix.os }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Python: ${{ matrix.python-version }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Status: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+

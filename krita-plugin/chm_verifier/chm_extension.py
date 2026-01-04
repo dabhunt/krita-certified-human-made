@@ -40,6 +40,7 @@ class CHMExtension(Extension):
         self.event_capture = None
         self.plugin_monitor = None
         self.capture_active = False
+        self.signing_key = None  # Secret key for HMAC signing (loaded in setup())
         self._debug_log("CHMExtension.__init__() completed")
         
     def setup(self):
@@ -47,6 +48,30 @@ class CHMExtension(Extension):
         self._debug_log("=" * 60)
         self._debug_log("CHM: setup() METHOD CALLED - THIS IS THE MAIN ENTRY POINT")
         self._debug_log("=" * 60)
+        
+        # CRITICAL: Load signing key first (required for tamper resistance)
+        self.signing_key = self._load_signing_key()
+        if not self.signing_key:
+            QMessageBox.critical(
+                None,
+                "CHM Plugin - Setup Error",
+                "Failed to load signing key!\n\n"
+                "The CHM plugin requires a secret signing key for tamper resistance.\n\n"
+                "To generate a key, run:\n"
+                "  python3 scripts/generate-signing-key.py\n\n"
+                "The key should be stored at:\n"
+                "  ~/.config/chm/signing_key.txt\n\n"
+                "Or set as environment variable:\n"
+                "  export CHM_SIGNING_KEY='your_key_here'\n\n"
+                "Plugin will not start without a valid key."
+            )
+            self._debug_log("❌ CRITICAL ERROR: No signing key found, plugin cannot start")
+            return
+        
+        # Set global signing key in chm_core (for HMAC signatures)
+        from . import chm_core
+        chm_core.set_signing_key(self.signing_key)
+        self._debug_log("[KEY-LOAD] ✓ Signing key set in chm_core module")
         
         if not CHM_AVAILABLE:
             QMessageBox.warning(
@@ -185,6 +210,18 @@ class CHMExtension(Extension):
             )
             return
         
+        # Check if document is saved
+        filepath = doc.fileName()
+        if not filepath:
+            self._log("[EXPORT] Document is not saved yet")
+            QMessageBox.information(
+                None,
+                "CHM Export",
+                "You must save your document before exporting with proof.\n\n"
+                "Please save your document first (File → Save), then try exporting again."
+            )
+            return
+        
         self._log(f"[EXPORT] Active document: {doc.name()}")
         
         # Get session
@@ -280,6 +317,27 @@ class CHMExtension(Extension):
             import json
             proof_filename = filename.replace('.png', '_proof.json').replace('.jpg', '_proof.json').replace('.jpeg', '_proof.json')
             proof_dict = proof.to_dict()
+            
+            # TAMPER RESISTANCE: Verify signature before saving (self-check)
+            from . import chm_core
+            if "signature" in proof_dict:
+                self._log("[EXPORT] 🔐 Verifying proof signature (self-check)...")
+                is_valid = chm_core._verify_session_signature(proof_dict)
+                if is_valid:
+                    self._log("[EXPORT] ✅ Signature verification passed")
+                else:
+                    self._log("[EXPORT] ❌ CRITICAL: Signature verification FAILED!")
+                    QMessageBox.critical(
+                        None,
+                        "CHM Export Error",
+                        "Proof signature verification failed!\n\n"
+                        "This should never happen. The proof may be corrupted.\n\n"
+                        "Please report this bug."
+                    )
+                    return
+            else:
+                self._log("[EXPORT] ⚠️ Proof has no signature (signing key may not be set)")
+            
             with open(proof_filename, 'w') as f:
                 json.dump(proof_dict, f, indent=2)
             
@@ -358,6 +416,37 @@ class CHMExtension(Extension):
                         self._log(f"[EXPORT]   • CHM Log: index {timestamp_results['chm_log']['log_index']}")
                     
                     timestamp_status = f"✓ Timestamped ({success_count}/2 services: {', '.join(services)})"
+                    
+                    # ===== PNG METADATA EMBEDDING (ROAA Option 1) =====
+                    # Embed gist URL in PNG metadata for immediate, robust verification
+                    # This eliminates GitHub indexing delays and survives file modifications
+                    if filename.lower().endswith('.png') and timestamp_results.get('github'):
+                        try:
+                            from .png_metadata import add_chm_metadata
+                            
+                            gist_url = timestamp_results['github']['url']
+                            self._log(f"[EXPORT] Embedding CHM metadata in PNG...")
+                            self._log(f"[EXPORT]   • Gist URL: {gist_url}")
+                            
+                            metadata_success = add_chm_metadata(
+                                png_path=filename,
+                                gist_url=gist_url,
+                                proof_hash=proof_hash,
+                                classification=proof_dict.get('classification', 'unknown'),
+                                session_id=proof_dict.get('session_id')
+                            )
+                            
+                            if metadata_success:
+                                self._log(f"[EXPORT] ✓ CHM metadata embedded successfully!")
+                                self._log(f"[EXPORT]   Verification will be immediate (no GitHub search delay)")
+                            else:
+                                self._log(f"[EXPORT] ⚠️ Metadata embedding failed (non-fatal)")
+                                self._log(f"[EXPORT]   Verification will still work via file hash search")
+                                
+                        except Exception as e:
+                            self._log(f"[EXPORT] ⚠️ Metadata embedding error (non-fatal): {e}")
+                            # Non-fatal - proof still works, just slower verification
+                    
                 else:
                     timestamp_status = "⚠️  All timestamp services failed"
                     
@@ -522,6 +611,17 @@ class CHMExtension(Extension):
                 None,
                 "CHM View Session",
                 "No active document."
+            )
+            return
+        
+        # Check if document is saved
+        filepath = doc.fileName()
+        if not filepath:
+            self._log("[VIEW] Document is not saved yet")
+            QMessageBox.information(
+                None,
+                "CHM View Session",
+                "You must save your document to preview the current session stats."
             )
             return
         
@@ -848,6 +948,82 @@ class CHMExtension(Extension):
         self._log(f"[GITHUB-TOKEN]   1. Create GitHub Personal Access Token at: https://github.com/settings/tokens")
         self._log(f"[GITHUB-TOKEN]   2. Save to: {token_file}")
         self._log(f"[GITHUB-TOKEN]   OR set environment variable: CHM_GITHUB_TOKEN=your_token")
+        
+        return None
+    
+    def _load_signing_key(self):
+        """
+        Load secret signing key for HMAC proof signatures.
+        
+        Checks in order:
+        1. Environment variable: CHM_SIGNING_KEY
+        2. Config file: ~/.config/chm/signing_key.txt
+        3. Returns None (plugin refuses to start)
+        
+        Returns:
+            str or None: Base64-encoded signing key if available
+        """
+        import os
+        import base64
+        
+        self._debug_log("[KEY-LOAD] ========== LOADING SIGNING KEY ==========")
+        
+        # 1. Check environment variable
+        self._debug_log("[KEY-LOAD] Step 1: Checking environment variable CHM_SIGNING_KEY...")
+        key = os.environ.get('CHM_SIGNING_KEY')
+        if key:
+            # Validate key format (should be base64, ~44 chars for 32 bytes)
+            try:
+                decoded = base64.b64decode(key)
+                if len(decoded) >= 16:  # At least 128 bits
+                    self._debug_log(f"[KEY-LOAD] ✓ Loaded from environment variable (length: {len(decoded)} bytes)")
+                    self._debug_log(f"[KEY-LOAD] Key fingerprint: {key[:8]}...{key[-8:]}")
+                    return key
+                else:
+                    self._debug_log(f"[KEY-LOAD] ⚠️ Key from env var too short ({len(decoded)} bytes), need >= 16")
+            except Exception as e:
+                self._debug_log(f"[KEY-LOAD] ⚠️ Invalid base64 in env var: {e}")
+        else:
+            self._debug_log("[KEY-LOAD] ✗ Environment variable not set")
+        
+        # 2. Check config file
+        self._debug_log("[KEY-LOAD] Step 2: Checking config file...")
+        config_dir = os.path.expanduser("~/.config/chm")
+        key_file = os.path.join(config_dir, "signing_key.txt")
+        
+        self._debug_log(f"[KEY-LOAD] Config file path: {key_file}")
+        self._debug_log(f"[KEY-LOAD] File exists: {os.path.exists(key_file)}")
+        
+        if os.path.exists(key_file):
+            try:
+                self._debug_log(f"[KEY-LOAD] Reading key file...")
+                with open(key_file, 'r') as f:
+                    key = f.read().strip()
+                    
+                # Validate key
+                decoded = base64.b64decode(key)
+                if len(decoded) >= 16:
+                    self._debug_log(f"[KEY-LOAD] ✓ Loaded from config file: {key_file}")
+                    self._debug_log(f"[KEY-LOAD] Key length: {len(decoded)} bytes")
+                    self._debug_log(f"[KEY-LOAD] Key fingerprint: {key[:8]}...{key[-8:]}")
+                    return key
+                else:
+                    self._debug_log(f"[KEY-LOAD] ✗ Key file contains invalid key (too short)")
+                    
+            except Exception as e:
+                self._debug_log(f"[KEY-LOAD] ✗ Error reading key file: {e}")
+                import traceback
+                self._debug_log(f"[KEY-LOAD] Traceback:\n{traceback.format_exc()}")
+        else:
+            self._debug_log(f"[KEY-LOAD] ✗ Key file not found")
+        
+        # 3. No key found - CRITICAL ERROR
+        self._debug_log("[KEY-LOAD] ========== NO SIGNING KEY FOUND ==========")
+        self._debug_log("[KEY-LOAD] ❌ CRITICAL: Plugin cannot start without signing key")
+        self._debug_log(f"[KEY-LOAD] To generate a key:")
+        self._debug_log(f"[KEY-LOAD]   python3 scripts/generate-signing-key.py")
+        self._debug_log(f"[KEY-LOAD] Or set environment variable:")
+        self._debug_log(f"[KEY-LOAD]   export CHM_SIGNING_KEY='your_key_here'")
         
         return None
     

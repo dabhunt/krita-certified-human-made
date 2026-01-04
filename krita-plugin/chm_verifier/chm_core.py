@@ -9,10 +9,153 @@ Rust optimization for performance-critical operations.
 """
 
 import hashlib
+import hmac
 import json
 import uuid
 from datetime import datetime
 from typing import Dict, List, Optional, Any
+
+# Global signing key (set by plugin on startup)
+_SIGNING_KEY = None
+
+
+def set_signing_key(key_b64: str):
+    """
+    Set the global signing key for HMAC signatures.
+    
+    This should be called once by the plugin during setup.
+    The key is used to sign session proofs for tamper resistance.
+    
+    Args:
+        key_b64: Base64-encoded signing key
+    """
+    global _SIGNING_KEY
+    import base64
+    
+    # Decode from base64
+    _SIGNING_KEY = base64.b64decode(key_b64)
+    
+    print(f"[SIGNING-KEY] ✓ Signing key loaded ({len(_SIGNING_KEY)} bytes)")
+    import sys
+    sys.stdout.flush()
+
+
+def _compute_session_signature(proof_data: Dict[str, Any], signature_version: str = "v1") -> Optional[str]:
+    """
+    Compute HMAC-SHA256 signature of critical proof data.
+    
+    This creates a tamper-proof signature that covers all critical fields.
+    Any modification to signed data will break the signature.
+    
+    Args:
+        proof_data: Proof data dictionary
+        signature_version: Signature version (for future key rotation)
+        
+    Returns:
+        Hex-encoded HMAC signature or None if signing key not set
+    """
+    global _SIGNING_KEY
+    
+    if not _SIGNING_KEY:
+        print("[SIGNATURE] ⚠️ No signing key set, cannot compute signature")
+        import sys
+        sys.stdout.flush()
+        return None
+    
+    # Extract critical data for signing
+    # These fields are the core of the proof and must not be tampered with
+    critical_data = {
+        "version": proof_data.get("version"),
+        "session_id": proof_data.get("session_id"),
+        "events_hash": proof_data.get("events_hash"),
+        "file_hash": proof_data.get("file_hash"),
+        "classification": proof_data.get("classification"),
+        "event_summary": {
+            "total_events": proof_data.get("event_summary", {}).get("total_events"),
+            "stroke_count": proof_data.get("event_summary", {}).get("stroke_count"),
+            "layer_count": proof_data.get("event_summary", {}).get("layer_count"),
+            "import_count": proof_data.get("event_summary", {}).get("import_count")
+        },
+        "metadata": {
+            "ai_tools_used": proof_data.get("metadata", {}).get("ai_tools_used"),
+            "ai_tools_list": proof_data.get("metadata", {}).get("ai_tools_list")
+        },
+        "signature_version": signature_version
+    }
+    
+    # Serialize to JSON (deterministic order)
+    critical_json = json.dumps(critical_data, sort_keys=True, separators=(',', ':'))
+    
+    # Compute HMAC-SHA256
+    signature = hmac.new(
+        _SIGNING_KEY,
+        critical_json.encode('utf-8'),
+        hashlib.sha256
+    ).hexdigest()
+    
+    print(f"[SIGNATURE] ✓ Computed signature: {signature[:16]}...{signature[-16:]}")
+    print(f"[SIGNATURE]   Signed data size: {len(critical_json)} bytes")
+    print(f"[SIGNATURE]   Signature version: {signature_version}")
+    import sys
+    sys.stdout.flush()
+    
+    return signature
+
+
+def _verify_session_signature(proof_data: Dict[str, Any]) -> bool:
+    """
+    Verify HMAC signature of proof data.
+    
+    Recomputes the signature and compares to stored value.
+    Returns True only if signatures match (proof is untampered).
+    
+    Args:
+        proof_data: Proof data dictionary with 'signature' field
+        
+    Returns:
+        True if signature is valid, False otherwise
+    """
+    global _SIGNING_KEY
+    
+    if not _SIGNING_KEY:
+        print("[VERIFY] ⚠️ No signing key set, cannot verify signature")
+        import sys
+        sys.stdout.flush()
+        return False
+    
+    # Check if proof has signature
+    if "signature" not in proof_data:
+        print("[VERIFY] ✗ Proof has no signature field")
+        import sys
+        sys.stdout.flush()
+        return False
+    
+    stored_signature = proof_data["signature"]
+    signature_version = proof_data.get("signature_version", "v1")
+    
+    # Recompute signature
+    computed_signature = _compute_session_signature(proof_data, signature_version)
+    
+    if not computed_signature:
+        print("[VERIFY] ✗ Failed to compute signature for verification")
+        import sys
+        sys.stdout.flush()
+        return False
+    
+    # Compare signatures (constant-time comparison to prevent timing attacks)
+    is_valid = hmac.compare_digest(stored_signature, computed_signature)
+    
+    if is_valid:
+        print(f"[VERIFY] ✅ Signature is VALID - proof is untampered")
+    else:
+        print(f"[VERIFY] ❌ Signature is INVALID - proof has been tampered!")
+        print(f"[VERIFY]   Expected: {computed_signature[:32]}...")
+        print(f"[VERIFY]   Got:      {stored_signature[:32]}...")
+    
+    import sys
+    sys.stdout.flush()
+    
+    return is_valid
 
 
 class CHMProof:
@@ -398,6 +541,21 @@ class CHMSession:
             "import_count": import_count,  # Track as separate metric (not part of classification)
             "metadata": self.metadata
         }
+        
+        # TAMPER RESISTANCE: Compute HMAC signature of critical proof data
+        print(f"[FLOW-3f] 🔐 Computing HMAC signature for tamper resistance...")
+        sys.stdout.flush()
+        
+        signature_version = "v1"  # For future key rotation
+        signature = _compute_session_signature(proof_data, signature_version)
+        
+        if signature:
+            proof_data["signature"] = signature
+            proof_data["signature_version"] = signature_version
+            print(f"[FLOW-3f] ✓ Signature added to proof")
+        else:
+            print(f"[FLOW-3f] ⚠️ No signature (signing key not set)")
+        sys.stdout.flush()
         
         print(f"[FLOW-3e] ✅ Proof data created, wrapping in CHMProof object")
         sys.stdout.flush()
