@@ -1038,7 +1038,19 @@ class EventCapture:
             self._poll_count += 1
             if self._poll_count % 10 == 0:
                 doc_name = doc.name() if doc else "None"
-                self._log(f"[POLLING] Poll #{self._poll_count}, active document: {doc_name}")
+                
+                # Check if user is AFK before logging polling events
+                if doc:
+                    doc_key = self._get_doc_key(doc)
+                    idle_polls = self.polls_without_change.get(doc_key, 0)
+                    is_afk = idle_polls >= self.AFK_POLL_THRESHOLD
+                    
+                    # Only log if user is NOT AFK (suppress polling logs during AFK)
+                    if not is_afk:
+                        self._log(f"[POLLING] Poll #{self._poll_count}, active document: {doc_name}")
+                else:
+                    # No document, log normally
+                    self._log(f"[POLLING] Poll #{self._poll_count}, active document: {doc_name}")
         
         if not doc:
             return
@@ -1048,6 +1060,7 @@ class EventCapture:
         doc_id = self._get_doc_key(doc)
         
         # BFROS FIX: Scan for imports on first poll (ensures ALL documents get scanned)
+        # This scans EXISTING layers (is_new_layer=False)
         if doc_id not in self.scanned_documents:
             self.scanned_documents.add(doc_id)
             if self.DEBUG_LOG:
@@ -1063,10 +1076,15 @@ class EventCapture:
         # Poll document modification (PRIMARY stroke detection)
         self.poll_document_modification(doc, doc_id)
     
-    def _check_layer_for_import(self, doc, doc_key, node, session):
+    def _check_layer_for_import(self, doc, doc_key, node, session, is_new_layer=False):
         """
-        Simple bulletproof import detection:
-        If a new layer already has pixel data, it's an import.
+        Import detection logic:
+        - NEW layers with immediate data = import (drag-drop, paste)
+        - Existing layers: only if name has image extension (scan on file open)
+        
+        Args:
+            is_new_layer: True if this is a newly created layer (from poll_layer_changes)
+                         False if this is an existing layer (from scan)
         """
         try:
             layer_name = node.name()
@@ -1078,10 +1096,9 @@ class EventCapture:
             if self.DEBUG_LOG:
                 self._log(f"[IMPORT-CHECK] ========================================")
                 self._log(f"[IMPORT-CHECK] Checking layer: {layer_name}")
-                self._log(f"[IMPORT-CHECK]   Type: {layer_type}")
+                self._log(f"[IMPORT-CHECK]   Type: {layer_type}, is_new_layer: {is_new_layer}")
             
-            # Simple rule: If layer has data, it's an import
-            # Empty layers created manually won't have bounds
+            # Check if layer has data
             try:
                 bounds = node.bounds()
                 has_data = bounds and bounds.width() > 0 and bounds.height() > 0
@@ -1090,16 +1107,31 @@ class EventCapture:
                     bounds_str = f"{bounds.width()}x{bounds.height()}" if has_data else "None/Empty"
                     self._log(f"[IMPORT-CHECK]   Bounds: {bounds_str}")
                 
-                if has_data:
-                    # Layer has data - it's an import!
-                    is_import = True
-                    import_type = f"{layer_type}_with_data"
-                    
-                    if self.DEBUG_LOG:
-                        self._log(f"[IMPORT-CHECK] ✓ Layer has data ({bounds.width()}x{bounds.height()}) → IMPORT")
+                if is_new_layer:
+                    # NEW layer: if has immediate data, it's an import
+                    if has_data:
+                        is_import = True
+                        import_type = f"{layer_type}_with_data"
+                        if self.DEBUG_LOG:
+                            self._log(f"[IMPORT-CHECK] ✓ NEW layer with data → IMPORT")
                 else:
-                    if self.DEBUG_LOG:
-                        self._log(f"[IMPORT-CHECK] ✗ Layer is empty → NOT IMPORT")
+                    # EXISTING layer (scan): only if name suggests import (has file extension)
+                    IMPORT_EXTENSIONS = [
+                        '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp',
+                        '.bmp', '.tif', '.tiff', '.psd', '.ora', '.exr'
+                    ]
+                    layer_lower = layer_name.lower()
+                    
+                    for ext in IMPORT_EXTENSIONS:
+                        if ext in layer_lower:
+                            is_import = True
+                            import_type = "existing_with_extension"
+                            if self.DEBUG_LOG:
+                                self._log(f"[IMPORT-CHECK] ✓ Existing layer with extension '{ext}' → IMPORT")
+                            break
+                    
+                    if not is_import and self.DEBUG_LOG:
+                        self._log(f"[IMPORT-CHECK] ✗ Existing layer, no image extension → NOT IMPORT")
                         
             except Exception as e:
                 self._log(f"[IMPORT-CHECK] Could not check bounds: {e}")
@@ -1159,9 +1191,9 @@ class EventCapture:
             if self.DEBUG_LOG:
                 self._log(f"[SCAN-ALL-LAYERS] Found {len(nodes_to_check)} layers to check")
             
-            # Check each node
+            # Check each node (existing layers, not new)
             for node in nodes_to_check:
-                self._check_layer_for_import(doc, doc_key, node, session)
+                self._check_layer_for_import(doc, doc_key, node, session, is_new_layer=False)
             
             if self.DEBUG_LOG:
                 self._log(f"[SCAN-ALL-LAYERS] ✓ Scan complete")
@@ -1218,9 +1250,9 @@ class EventCapture:
                             )
                             self._log(f"[LAYER-ADD] Layer added: {layer_name} (type: {layer_type})")
                             
-                            # Simple import detection: layer with data = import
+                            # Import detection for NEW layer
                             doc_key = self._get_doc_key(doc)
-                            self._check_layer_for_import(doc, doc_key, node, session)
+                            self._check_layer_for_import(doc, doc_key, node, session, is_new_layer=True)
                     except Exception as e:
                         self._log(f"[LAYER-ADD] Error recording layer: {e}")
                         import traceback
@@ -1334,18 +1366,24 @@ class EventCapture:
                     self._mod_poll_count = 0
                 self._mod_poll_count += 1
                 
-                # Log every 10 polls for AFK diagnostics
+                # Log every 10 polls for AFK diagnostics (but only if NOT AFK)
                 if self._mod_poll_count % 10 == 0:
                     idle_polls = self.polls_without_change.get(doc_id, 0)
                     is_afk = idle_polls >= self.AFK_POLL_THRESHOLD
-                    self._log(f"[AFK-DIAG-1] === POLL #{self._mod_poll_count} === idle_polls={idle_polls}, is_afk={is_afk}, threshold={self.AFK_POLL_THRESHOLD}")
+                    
+                    # Only log if user is NOT AFK (suppress during AFK)
+                    if not is_afk:
+                        self._log(f"[AFK-DIAG-1] === POLL #{self._mod_poll_count} === idle_polls={idle_polls}, is_afk={is_afk}, threshold={self.AFK_POLL_THRESHOLD}")
             
             current_modified = doc.modified()
             previous_modified = self.doc_modified_state.get(doc_id, False)
             
-            # AFK-DIAG-2: Modified state
+            # AFK-DIAG-2: Modified state (suppress if AFK)
             if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
-                self._log(f"[AFK-DIAG-2] Modified: current={current_modified}, previous={previous_modified}")
+                idle_polls = self.polls_without_change.get(doc_id, 0)
+                is_afk = idle_polls >= self.AFK_POLL_THRESHOLD
+                if not is_afk:
+                    self._log(f"[AFK-DIAG-2] Modified: current={current_modified}, previous={previous_modified}")
             
             # BFROS FIX: Detect ACTUAL content changes using lightweight thumbnail hash
             # This solves the "modified flag stays True" problem
@@ -1355,9 +1393,12 @@ class EventCapture:
             # Only check for changes if document is modified
             if current_modified:
                 try:
-                    # AFK-DIAG-3: Document is modified, checking for content changes
+                    # AFK-DIAG-3: Document is modified, checking for content changes (suppress if AFK)
                     if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
-                        self._log(f"[AFK-DIAG-3] Doc is modified, checking for actual content changes...")
+                        idle_polls = self.polls_without_change.get(doc_id, 0)
+                        is_afk = idle_polls >= self.AFK_POLL_THRESHOLD
+                        if not is_afk:
+                            self._log(f"[AFK-DIAG-3] Doc is modified, checking for actual content changes...")
                     
                     # Get lightweight hash of document content
                     # Use thumbnail() method - fast and sufficient for change detection
@@ -1367,15 +1408,21 @@ class EventCapture:
                     thumbnail = doc.thumbnail(100, 100)
                     
                     if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
-                        thumb_status = "exists" if thumbnail else "None"
-                        self._log(f"[AFK-DIAG-4] Thumbnail retrieved: {thumb_status}")
+                        idle_polls = self.polls_without_change.get(doc_id, 0)
+                        is_afk = idle_polls >= self.AFK_POLL_THRESHOLD
+                        if not is_afk:
+                            thumb_status = "exists" if thumbnail else "None"
+                            self._log(f"[AFK-DIAG-4] Thumbnail retrieved: {thumb_status}")
                     
                     if thumbnail:
                         # DIAGNOSTIC: Check if metadata-based hash is actually changing
                         metadata_hash = f"{thumbnail.width()}x{thumbnail.height()}x{thumbnail.byteCount()}"
                         
                         if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
-                            self._log(f"[AFK-DIAG-5] Thumbnail metadata: {metadata_hash}")
+                            idle_polls = self.polls_without_change.get(doc_id, 0)
+                            is_afk = idle_polls >= self.AFK_POLL_THRESHOLD
+                            if not is_afk:
+                                self._log(f"[AFK-DIAG-5] Thumbnail metadata: {metadata_hash}")
                         
                         # ACTUAL FIX: Hash the pixel data, not just metadata
                         # Metadata (width/height/byteCount) is CONSTANT for same thumbnail size!
@@ -1392,7 +1439,10 @@ class EventCapture:
                             thumbnail_hash = hashlib.md5(thumbnail_bytes).hexdigest()[:16]
                             
                             if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
-                                self._log(f"[AFK-DIAG-6] Pixel content hash: {thumbnail_hash}")
+                                idle_polls = self.polls_without_change.get(doc_id, 0)
+                                is_afk = idle_polls >= self.AFK_POLL_THRESHOLD
+                                if not is_afk:
+                                    self._log(f"[AFK-DIAG-6] Pixel content hash: {thumbnail_hash}")
                             
                         except Exception as hash_error:
                             # Fallback to metadata hash if pixel hashing fails
@@ -1402,12 +1452,15 @@ class EventCapture:
                         
                         previous_hash = self.doc_content_hash.get(doc_id)
                         
-                        # AFK-DIAG-7: Hash comparison
+                        # AFK-DIAG-7: Hash comparison (suppress if AFK)
                         if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
-                            match_status = "MATCH" if previous_hash == thumbnail_hash else "DIFFERENT"
-                            prev_display = previous_hash[:8] if previous_hash else 'None'
-                            curr_display = thumbnail_hash[:8] if thumbnail_hash else 'None'
-                            self._log(f"[AFK-DIAG-7] Hash comparison: prev={prev_display}... vs curr={curr_display}... → {match_status}")
+                            idle_polls = self.polls_without_change.get(doc_id, 0)
+                            is_afk = idle_polls >= self.AFK_POLL_THRESHOLD
+                            if not is_afk:
+                                match_status = "MATCH" if previous_hash == thumbnail_hash else "DIFFERENT"
+                                prev_display = previous_hash[:8] if previous_hash else 'None'
+                                curr_display = thumbnail_hash[:8] if thumbnail_hash else 'None'
+                                self._log(f"[AFK-DIAG-7] Hash comparison: prev={prev_display}... vs curr={curr_display}... → {match_status}")
                         
                         # Detect ACTUAL change in content
                         if previous_hash != thumbnail_hash:
@@ -1450,20 +1503,24 @@ class EventCapture:
             # Count active polls instead of time calculations - simpler and less error-prone
             session = self.session_manager.get_session(doc)
             
-            # BFROS DIAG-1: Check if session exists
+            # BFROS DIAG-1: Check if session exists (suppress if AFK)
             if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
-                if session:
-                    self._log(f"[BFROS-DT-1] Session exists: {session.id[:16]}...")
-                else:
-                    self._log(f"[BFROS-DT-1] ❌ No session found for doc_id={doc_id}")
+                idle_polls = self.polls_without_change.get(doc_id, 0)
+                is_afk = idle_polls >= self.AFK_POLL_THRESHOLD
+                if not is_afk:
+                    if session:
+                        self._log(f"[BFROS-DT-1] Session exists: {session.id[:16]}...")
+                    else:
+                        self._log(f"[BFROS-DT-1] ❌ No session found for doc_id={doc_id}")
             
             if session:
                 idle_polls = self.polls_without_change.get(doc_id, 0)
                 is_afk_now = idle_polls >= self.AFK_POLL_THRESHOLD
                 
-                # BFROS DIAG-2: Check AFK status
+                # BFROS DIAG-2: Check AFK status (suppress if AFK)
                 if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
-                    self._log(f"[BFROS-DT-2] idle_polls={idle_polls}, is_afk={is_afk_now}, threshold={self.AFK_POLL_THRESHOLD}")
+                    if not is_afk_now:
+                        self._log(f"[BFROS-DT-2] idle_polls={idle_polls}, is_afk={is_afk_now}, threshold={self.AFK_POLL_THRESHOLD}")
                 
                 # Simple approach: Increment poll counter when not AFK
                 if not is_afk_now:
@@ -1478,33 +1535,45 @@ class EventCapture:
                         current_dt = session.drawing_time_secs if hasattr(session, 'drawing_time_secs') else 0
                         
                         if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
-                            poll_count = self.active_poll_count[doc_id]
-                            self._log(f"[BFROS-DT-3] Active polls={poll_count}, adding 1s (current={current_dt}s)")
+                            idle_polls = self.polls_without_change.get(doc_id, 0)
+                            is_afk = idle_polls >= self.AFK_POLL_THRESHOLD
+                            if not is_afk:
+                                poll_count = self.active_poll_count[doc_id]
+                                self._log(f"[BFROS-DT-3] Active polls={poll_count}, adding 1s (current={current_dt}s)")
                         
                         session.add_drawing_time(1)
                         
                         if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
-                            new_dt = session.drawing_time_secs if hasattr(session, 'drawing_time_secs') else 0
-                            self._log(f"[BFROS-DT-4] ✓ Drawing time updated: {new_dt}s")
+                            idle_polls = self.polls_without_change.get(doc_id, 0)
+                            is_afk = idle_polls >= self.AFK_POLL_THRESHOLD
+                            if not is_afk:
+                                new_dt = session.drawing_time_secs if hasattr(session, 'drawing_time_secs') else 0
+                                self._log(f"[BFROS-DT-4] ✓ Drawing time updated: {new_dt}s")
                     else:
-                        # Odd poll, just log the counter increment
+                        # Odd poll, just log the counter increment (suppress if AFK)
                         if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
-                            poll_count = self.active_poll_count[doc_id]
-                            self._log(f"[BFROS-DT-3] Active polls={poll_count} (waiting for next poll to add 1s)")
+                            idle_polls = self.polls_without_change.get(doc_id, 0)
+                            is_afk = idle_polls >= self.AFK_POLL_THRESHOLD
+                            if not is_afk:
+                                poll_count = self.active_poll_count[doc_id]
+                                self._log(f"[BFROS-DT-3] Active polls={poll_count} (waiting for next poll to add 1s)")
                 else:
                     # User is AFK - don't increment poll counter
                     if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 20 == 0:
                         self._log(f"[DRAWING-TIME] User AFK - not incrementing active poll counter")
             
-            # AFK-DIAG-10: Session metrics check
+            # AFK-DIAG-10: Session metrics check (suppress if AFK)
             if DEBUG_AFK and self.DEBUG_LOG and self._mod_poll_count % 10 == 0:
                 if session:
-                    duration = session.duration_secs if hasattr(session, 'duration_secs') else 'N/A'
-                    drawing_time = session.drawing_time_secs if hasattr(session, 'drawing_time_secs') else 'N/A'
-                    event_count = session.event_count if hasattr(session, 'event_count') else 'N/A'
                     idle_polls = self.polls_without_change.get(doc_id, 0)
                     is_afk_now = idle_polls >= self.AFK_POLL_THRESHOLD
-                    self._log(f"[AFK-DIAG-10] Session: duration={duration}s, drawing={drawing_time}s, events={event_count}, idle_polls={idle_polls}, is_afk={is_afk_now}")
+                    
+                    # Only log if user is NOT AFK
+                    if not is_afk_now:
+                        duration = session.duration_secs if hasattr(session, 'duration_secs') else 'N/A'
+                        drawing_time = session.drawing_time_secs if hasattr(session, 'drawing_time_secs') else 'N/A'
+                        event_count = session.event_count if hasattr(session, 'event_count') else 'N/A'
+                        self._log(f"[AFK-DIAG-10] Session: duration={duration}s, drawing={drawing_time}s, events={event_count}, idle_polls={idle_polls}, is_afk={is_afk_now}")
             
             if should_record:
                 import time
