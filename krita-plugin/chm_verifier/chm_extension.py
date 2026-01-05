@@ -417,38 +417,11 @@ class CHMExtension(Extension):
                     
                     timestamp_status = f"✓ Timestamped ({success_count}/2 services: {', '.join(services)})"
                     
-                    # ===== PNG METADATA EMBEDDING (ROAA Option 1) =====
-                    # Embed gist URL in PNG metadata for immediate, robust verification
-                    # This eliminates GitHub indexing delays and survives file modifications
-                    if filename.lower().endswith('.png') and timestamp_results.get('github'):
-                        try:
-                            from .png_metadata import add_chm_metadata
-                            
-                            gist_url = timestamp_results['github']['url']
-                            self._log(f"[EXPORT] Embedding CHM metadata in PNG...")
-                            self._log(f"[EXPORT]   • Gist URL: {gist_url}")
-                            
-                            metadata_success = add_chm_metadata(
-                                png_path=filename,
-                                gist_url=gist_url,
-                                proof_hash=proof_hash,
-                                classification=proof_dict.get('classification', 'unknown'),
-                                session_id=proof_dict.get('session_id')
-                            )
-                            
-                            if metadata_success:
-                                self._log(f"[EXPORT] ✓ CHM metadata embedded successfully!")
-                                self._log(f"[EXPORT]   Verification will be immediate (no GitHub search delay)")
-                            else:
-                                self._log(f"[EXPORT] ⚠️ Metadata embedding failed (non-fatal)")
-                                self._log(f"[EXPORT]   Verification will still work via file hash search")
-                                
-                        except Exception as e:
-                            self._log(f"[EXPORT] ⚠️ Metadata embedding error (non-fatal): {e}")
-                            # Non-fatal - proof still works, just slower verification
-                    
                 else:
                     timestamp_status = "⚠️  All timestamp services failed"
+                    
+                # Store gist URL for later metadata embedding (must happen AFTER C2PA)
+                gist_url_for_metadata = timestamp_results.get('github', {}).get('url') if success_count > 0 else None
                     
             except Exception as e:
                 self._log(f"[EXPORT] ⚠️  Timestamp submission failed (non-fatal): {e}")
@@ -569,6 +542,38 @@ class CHMExtension(Extension):
                 "c2pa_status": c2pa_status,
                 "timestamp_url": None
             }
+            
+            # ===== PNG METADATA EMBEDDING (ROAA Option 1) =====
+            # CRITICAL: Must happen AFTER C2PA embedding!
+            # C2PA rewrites the PNG file, so metadata must be added last
+            if filename.lower().endswith('.png') and gist_url_for_metadata:
+                try:
+                    from .png_metadata import add_chm_metadata
+                    
+                    self._log(f"[EXPORT] Embedding CHM metadata in PNG (AFTER C2PA)...")
+                    self._log(f"[EXPORT]   • Gist URL: {gist_url_for_metadata}")
+                    
+                    metadata_success = add_chm_metadata(
+                        png_path=filename,
+                        gist_url=gist_url_for_metadata,
+                        proof_hash=proof_hash,
+                        classification=proof_dict.get('classification', 'unknown'),
+                        session_id=proof_dict.get('session_id')
+                    )
+                    
+                    if metadata_success:
+                        self._log(f"[EXPORT] ✓ CHM metadata embedded successfully!")
+                        self._log(f"[EXPORT]   Verification will be immediate (no GitHub search delay)")
+                    else:
+                        self._log(f"[EXPORT] ⚠️ Metadata embedding returned False (non-fatal)")
+                        self._log(f"[EXPORT]   Check png_metadata.py logs for details")
+                        self._log(f"[EXPORT]   Verification will still work via file hash search")
+                        
+                except Exception as e:
+                    self._log(f"[EXPORT] ⚠️ Metadata embedding exception (non-fatal): {e}")
+                    import traceback
+                    self._log(f"[EXPORT] Exception traceback: {traceback.format_exc()}")
+                    # Non-fatal - proof still works, just slower verification
             
             # Add clickable GitHub Gist URL if available (public timestamp proof)
             if timestamp_results and timestamp_results.get('github'):

@@ -1,5 +1,20 @@
 # CHM Plugin - Testing Quick Start
 
+## 🆕 New Feature: PNG Metadata Verification
+
+**What's New:** Exported PNGs now have verification data embedded in metadata, enabling **instant verification (<1 second)** instead of waiting for GitHub indexing (10-60 minutes).
+
+**See:** [Testing PNG Metadata Guide](/docs/testing-png-metadata.md) for comprehensive testing instructions.
+
+**Quick Check:**
+```bash
+# After exporting test.png with latest plugin:
+exiftool test.png | grep CHM-Gist-URL
+# Should show: CHM-Gist-URL : https://gist.github.com/...
+```
+
+---
+
 ## ⚡ Quick Test (5 minutes)
 
 ### 1. Restart Krita

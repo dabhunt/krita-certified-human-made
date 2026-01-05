@@ -111,11 +111,15 @@ def add_chm_metadata(
     except ImportError as e:
         _debug_log(f"❌ Failed to import PIL: {e}")
         print(f"CHM: ERROR - PIL not available. Cannot embed metadata.")
+        import traceback
+        print(f"CHM: Import error traceback: {traceback.format_exc()}")
         return False
         
     except Exception as e:
         _debug_log(f"❌ Error adding metadata: {e}")
         print(f"CHM: ERROR - Failed to add metadata to PNG: {e}")
+        import traceback
+        print(f"CHM: Error traceback: {traceback.format_exc()}")
         return False
 
 
