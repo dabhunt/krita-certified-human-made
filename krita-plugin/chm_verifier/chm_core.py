@@ -343,6 +343,25 @@ class CHMSession:
         }
         self.events.append(event)
     
+    def record_undo_redo(self, action: str):
+        """
+        Record an undo/redo event (indicates human behavior).
+        
+        Args:
+            action: Type of action ("undo" or "redo")
+        """
+        if self.finalized:
+            raise RuntimeError("Cannot record events on finalized session")
+        
+        timestamp = datetime.utcnow().timestamp()
+        
+        event = {
+            "type": "undo_redo",
+            "action": action,
+            "timestamp": timestamp
+        }
+        self.events.append(event)
+    
     def get_event_count(self) -> int:
         """Get number of recorded events"""
         return len(self.events)
@@ -478,8 +497,10 @@ class CHMSession:
         # Use tracked layer count (initialized to 1 for default layer, incremented on layer_added events)
         layer_count = self._layer_count
         import_count = sum(1 for e in self.events if e.get("type") == "import")
+        # Only count undo operations (not redo) - stronger indicator of human creative process
+        undo_count = sum(1 for e in self.events if e.get("type") == "undo_redo" and e.get("action") == "undo")
         
-        print(f"[FLOW-3b] 📊 Event summary: {stroke_count} strokes, {layer_count} layers, {import_count} imports")
+        print(f"[FLOW-3b] 📊 Event summary: {stroke_count} strokes, {layer_count} layers, {import_count} imports, {undo_count} undos")
         sys.stdout.flush()
         
         # Generate event hash
@@ -532,6 +553,7 @@ class CHMSession:
                 "stroke_count": stroke_count,
                 "layer_count": layer_count,
                 "import_count": import_count,
+                "undo_count": undo_count,
                 "session_duration_secs": int(duration),  # Add for UI display
                 "drawing_time_secs": int(self.drawing_time_secs)  # BUG#008 FIX: Also in event_summary for UI
             },
@@ -634,10 +656,13 @@ class CHMSession:
         print(f"[CLASSIFY-BFROS]   doc_key: {doc_key}")
         print(f"[CLASSIFY-BFROS]   import_tracker: {import_tracker}")
         print(f"[CLASSIFY-BFROS]   has import_tracker: {import_tracker is not None}")
+        print(f"[CLASSIFY-BFROS]   metadata: {self.metadata}")
         
         # Priority 1: Check for AI tools in metadata
         ai_tools_used = self.metadata.get("ai_tools_used", False)
+        ai_tools_list = self.metadata.get("ai_tools_list", [])
         print(f"[CLASSIFY-BFROS]   ai_tools_used: {ai_tools_used}")
+        print(f"[CLASSIFY-BFROS]   ai_tools_list: {ai_tools_list}")
         if ai_tools_used:
             print(f"[CLASSIFY-BFROS] Result: AI-Assisted")
             print(f"[CLASSIFY-BFROS] ========================================")

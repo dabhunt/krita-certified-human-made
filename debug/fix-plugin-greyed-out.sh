@@ -167,3 +167,4 @@ echo ""
 echo "If plugin is still greyed out, check Scripter console for error messages."
 echo ""
 
+

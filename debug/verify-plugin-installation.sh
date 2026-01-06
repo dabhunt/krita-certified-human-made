@@ -199,3 +199,4 @@ echo "  - Check Settings → Configure Krita → Python Plugin Manager"
 echo "  - Enable 'Certified Human-Made' and restart Krita"
 echo ""
 
+

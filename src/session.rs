@@ -33,6 +33,9 @@ pub struct SessionMetadata {
     pub canvas_height: Option<u32>,
     pub krita_version: Option<String>,
     pub os_info: Option<String>,
+    pub ai_tools_used: bool,
+    pub ai_tools_list: Vec<String>,
+    pub ai_plugins_detected: bool,
 }
 
 /// Main session structure that tracks art creation events
@@ -72,6 +75,9 @@ impl CHMSession {
                 canvas_height: None,
                 krita_version: None,
                 os_info: None,
+                ai_tools_used: false,
+                ai_tools_list: Vec::new(),
+                ai_plugins_detected: false,
             },
             config,
             encryption_key,
@@ -156,11 +162,21 @@ impl CHMSession {
 
         let event = SessionEvent::PluginUsed {
             plugin_name: plugin_name.clone(),
-            plugin_type,
+            plugin_type: plugin_type.clone(),
             timestamp: Utc::now().timestamp(),
         };
 
-        log::warn!("Plugin used: {}", plugin_name);
+        // Auto-update metadata for AI plugins (ensures classification works)
+        if plugin_type.contains("AI") || plugin_type.contains("GENERATION") {
+            self.metadata.ai_tools_used = true;
+            if !self.metadata.ai_tools_list.contains(&plugin_name) {
+                self.metadata.ai_tools_list.push(plugin_name.clone());
+            }
+            log::warn!("AI Plugin used: {} → ai_tools_used=true", plugin_name);
+        } else {
+            log::warn!("Plugin used: {}", plugin_name);
+        }
+
         self.record_event(event)
     }
 

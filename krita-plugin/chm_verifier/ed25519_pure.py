@@ -143,3 +143,4 @@ def sign(message, secret_key):
     public_key = publickey(secret_key)
     return signature(message, secret_key, public_key)
 
+

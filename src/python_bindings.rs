@@ -137,27 +137,33 @@
      ///     canvas_height (int, optional): Canvas height in pixels
      ///     krita_version (str, optional): Krita version string
      ///     os_info (str, optional): OS information
-     fn set_metadata(
-         &mut self,
-         document_name: Option<String>,
-         canvas_width: Option<u32>,
-         canvas_height: Option<u32>,
-         krita_version: Option<String>,
-         os_info: Option<String>,
-     ) -> PyResult<()> {
-         use crate::session::SessionMetadata;
-         
-         let metadata = SessionMetadata {
-             document_name,
-             canvas_width,
-             canvas_height,
-             krita_version,
-             os_info,
-         };
-         
-         self.inner.set_metadata(metadata);
-         Ok(())
-     }
+    fn set_metadata(
+        &mut self,
+        document_name: Option<String>,
+        canvas_width: Option<u32>,
+        canvas_height: Option<u32>,
+        krita_version: Option<String>,
+        os_info: Option<String>,
+        ai_plugins_detected: Option<bool>,
+    ) -> PyResult<()> {
+        use crate::session::SessionMetadata;
+        
+        let metadata = SessionMetadata {
+            document_name,
+            canvas_width,
+            canvas_height,
+            krita_version,
+            os_info,
+            // Preserve AI plugin tracking (set by record_plugin_used)
+            ai_tools_used: self.inner.metadata.ai_tools_used,
+            ai_tools_list: self.inner.metadata.ai_tools_list.clone(),
+            // Allow updating ai_plugins_detected flag
+            ai_plugins_detected: ai_plugins_detected.unwrap_or(self.inner.metadata.ai_plugins_detected),
+        };
+        
+        self.inner.set_metadata(metadata);
+        Ok(())
+    }
      
      /// Get the public key for this session (for verification)
      #[getter]
@@ -249,25 +255,30 @@
      /// 
      /// Returns:
      ///     dict: Session metadata including document name, canvas size, etc.
-     fn get_metadata(&self) -> PyResult<PyObject> {
-         Python::with_gil(|py| {
-             let dict = PyDict::new(py);
-             if let Some(ref doc_name) = self.inner.metadata.document_name {
-                 dict.set_item("document_name", doc_name)?;
-             }
-             if let Some(width) = self.inner.metadata.canvas_width {
-                 dict.set_item("canvas_width", width)?;
-             }
-             if let Some(height) = self.inner.metadata.canvas_height {
-                 dict.set_item("canvas_height", height)?;
-             }
-             if let Some(ref krita_version) = self.inner.metadata.krita_version {
-                 dict.set_item("krita_version", krita_version)?;
-             }
-             
-             Ok(dict.into())
-         })
-     }
+    fn get_metadata(&self) -> PyResult<PyObject> {
+        Python::with_gil(|py| {
+            let dict = PyDict::new(py);
+            if let Some(ref doc_name) = self.inner.metadata.document_name {
+                dict.set_item("document_name", doc_name)?;
+            }
+            if let Some(width) = self.inner.metadata.canvas_width {
+                dict.set_item("canvas_width", width)?;
+            }
+            if let Some(height) = self.inner.metadata.canvas_height {
+                dict.set_item("canvas_height", height)?;
+            }
+            if let Some(ref krita_version) = self.inner.metadata.krita_version {
+                dict.set_item("krita_version", krita_version)?;
+            }
+            
+            // AI plugin detection fields (CRITICAL for classification)
+            dict.set_item("ai_tools_used", self.inner.metadata.ai_tools_used)?;
+            dict.set_item("ai_tools_list", self.inner.metadata.ai_tools_list.clone())?;
+            dict.set_item("ai_plugins_detected", self.inner.metadata.ai_plugins_detected)?;
+            
+            Ok(dict.into())
+        })
+    }
  }
  
  /// Simple "Hello World" function for testing PyO3 bindings

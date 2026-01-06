@@ -4,11 +4,16 @@ Plugin Monitor
 Detects installed Krita plugins, particularly AI generation plugins.
 Maintains a registry of known AI plugins and scans for them.
 
-Detection Strategy:
+Detection Strategy (Two-Tier Approach):
 1. Scan pykrita directory for .desktop files
 2. Parse desktop files for plugin metadata
-3. Cross-reference with AI plugins registry
-4. Optional: Fetch latest registry from GitHub (future enhancement)
+3. Cross-reference with AI plugins registry (Tier 1: Exact match)
+4. Fallback to keyword detection (Tier 2: Catches variants/new plugins)
+5. Optional: Fetch latest registry from GitHub (future enhancement)
+
+This two-tier approach ensures comprehensive detection:
+- Registry provides precise control and metadata
+- Keywords catch new plugins, variants (ai_diffusion vs ai-diffusion), and typos
 """
 
 import os
@@ -23,7 +28,12 @@ class PluginMonitor:
     # Known AI plugins registry
     # Future: Fetch from GitHub with local cache fallback
     AI_PLUGINS_REGISTRY = [
+        # AI Diffusion (various naming variants)
+        {"name": "ai_diffusion", "display_name": "AI Diffusion", "type": "AI_GENERATION"},
         {"name": "krita-ai-diffusion", "display_name": "Krita AI Diffusion", "type": "AI_GENERATION"},
+        {"name": "aidiffusion", "display_name": "AI Diffusion", "type": "AI_GENERATION"},
+        
+        # Other AI plugins
         {"name": "auto-sd-paint-ext", "display_name": "Auto SD Paint", "type": "AI_GENERATION"},
         {"name": "defuser", "display_name": "Defuser", "type": "AI_GENERATION"},
         {"name": "stable-diffusion-krita", "display_name": "Stable Diffusion Krita", "type": "AI_GENERATION"},
@@ -31,6 +41,23 @@ class PluginMonitor:
         {"name": "sd-webui-krita", "display_name": "SD WebUI Krita", "type": "AI_GENERATION"},
         {"name": "ai-paint", "display_name": "AI Paint", "type": "AI_GENERATION"},
         {"name": "ml-paint", "display_name": "ML Paint", "type": "AI_GENERATION"},
+    ]
+    
+    # Keyword patterns for fallback detection
+    # Catches AI plugins not in registry (new plugins, variants, etc.)
+    AI_KEYWORDS = [
+        # AI/Diffusion patterns
+        "ai-diffusion", "ai_diffusion", "aidiffusion",
+        "ai-paint", "ai_paint", "ai-generator", "aigenerator",
+        
+        # Stable Diffusion patterns
+        "stablediffusion", "stable-diffusion", "sd-webui", "sd_webui",
+        
+        # ML/Neural patterns  
+        "neural", "ml-", "ml_",  # ml- and ml_ catch ml-paint, ml-assistant, etc.
+        
+        # Specific AI tools
+        "defuser", "gan"
     ]
     
     def __init__(self, debug_log=True):
@@ -98,11 +125,17 @@ class PluginMonitor:
                     plugin_info['is_ai'] = self.is_ai_plugin(plugin_info['name'])
                     
                     if plugin_info['is_ai']:
-                        # Add AI type from registry
+                        # Add AI type from registry (if exact match found)
+                        ai_type_found = False
                         for ai_plugin in self.AI_PLUGINS_REGISTRY:
                             if ai_plugin["name"].lower() in plugin_info['name'].lower():
                                 plugin_info['ai_type'] = ai_plugin.get('type', 'UNKNOWN')
+                                ai_type_found = True
                                 break
+                        
+                        # If detected via keyword but not in registry, use default type
+                        if not ai_type_found:
+                            plugin_info['ai_type'] = 'AI_GENERATION'
                     
                     self.detected_plugins.append(plugin_info)
                     
@@ -159,7 +192,9 @@ class PluginMonitor:
     
     def is_ai_plugin(self, plugin_name):
         """
-        Check if a plugin is in the AI registry
+        Check if a plugin is an AI plugin using two-tier detection:
+        1. Exact registry match (precise, curated list)
+        2. Keyword fallback (catches variants and new plugins)
         
         Args:
             plugin_name: Plugin name to check (case-insensitive)
@@ -168,9 +203,21 @@ class PluginMonitor:
             True if plugin is known AI plugin, False otherwise
         """
         plugin_lower = plugin_name.lower()
+        
+        # Tier 1: Check exact registry match
         for ai_plugin in self.AI_PLUGINS_REGISTRY:
             if ai_plugin["name"].lower() in plugin_lower:
+                if self.DEBUG_LOG:
+                    self._log(f"[AI-DETECT] ✓ Registry match: {plugin_name} → {ai_plugin['name']}")
                 return True
+        
+        # Tier 2: Keyword fallback for variants/new plugins
+        for keyword in self.AI_KEYWORDS:
+            if keyword in plugin_lower:
+                if self.DEBUG_LOG:
+                    self._log(f"[AI-DETECT] ✓ Keyword match: {plugin_name} → '{keyword}'")
+                return True
+        
         return False
     
     def get_ai_plugins(self):

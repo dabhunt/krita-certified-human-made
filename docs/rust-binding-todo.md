@@ -308,3 +308,4 @@ After adding methods:
 - `krita-plugin/chm_verifier/chm_session_manager.py` - Python workaround
 - `krita-plugin/chm_verifier/event_capture.py` - Uses serialization
 
+

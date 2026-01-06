@@ -378,6 +378,12 @@ class CHMExtension(Extension):
             # Submit proof hash to triple timestamp services (Task 1.13)
             import hashlib
             proof_hash = hashlib.sha256(json.dumps(proof_dict, sort_keys=True).encode()).hexdigest()
+            
+            # BUG FIX: Store FILEUSE file_hash for metadata, NOT proof_hash
+            # proof_hash = hash of proof JSON (used for timestamping)
+            # file_hash = hash of PNG file (used for verification)
+            file_hash_for_metadata = proof_dict.get('file_hash', '')
+            
             timestamp_results = None
             timestamp_status = "Not timestamped"
             
@@ -543,30 +549,32 @@ class CHMExtension(Extension):
                 "timestamp_url": None
             }
             
-            # ===== PNG METADATA EMBEDDING (ROAA Option 1) =====
+            # ===== PNG METADATA EMBEDDING (Pure Python - ROAA Option 1) =====
             # CRITICAL: Must happen AFTER C2PA embedding!
             # C2PA rewrites the PNG file, so metadata must be added last
+            # Uses pure Python implementation (no PIL required - stdlib only!)
             if filename.lower().endswith('.png') and gist_url_for_metadata:
                 try:
-                    from .png_metadata import add_chm_metadata
+                    from .png_metadata_pure import add_chm_metadata
                     
                     self._log(f"[EXPORT] Embedding CHM metadata in PNG (AFTER C2PA)...")
+                    self._log(f"[EXPORT]   • Using pure Python embedder (stdlib only, no PIL)")
                     self._log(f"[EXPORT]   • Gist URL: {gist_url_for_metadata}")
                     
                     metadata_success = add_chm_metadata(
                         png_path=filename,
                         gist_url=gist_url_for_metadata,
-                        proof_hash=proof_hash,
+                        proof_hash=file_hash_for_metadata,  # BUG FIX: Use file_hash, not proof_hash
                         classification=proof_dict.get('classification', 'unknown'),
                         session_id=proof_dict.get('session_id')
                     )
                     
                     if metadata_success:
                         self._log(f"[EXPORT] ✓ CHM metadata embedded successfully!")
-                        self._log(f"[EXPORT]   Verification will be immediate (no GitHub search delay)")
+                        self._log(f"[EXPORT]   ✓ Verification will be immediate (no GitHub search delay)")
                     else:
                         self._log(f"[EXPORT] ⚠️ Metadata embedding returned False (non-fatal)")
-                        self._log(f"[EXPORT]   Check png_metadata.py logs for details")
+                        self._log(f"[EXPORT]   Check png_metadata_pure.py logs for details")
                         self._log(f"[EXPORT]   Verification will still work via file hash search")
                         
                 except Exception as e:
@@ -668,6 +676,8 @@ class CHMExtension(Extension):
         # Count events by type
         stroke_count = sum(1 for e in session.events if e.get("type") == "stroke")
         import_count = sum(1 for e in session.events if e.get("type") == "import")
+        # Only count undo operations (not redo) - stronger indicator of human creative process
+        undo_count = sum(1 for e in session.events if e.get("type") == "undo_redo" and e.get("action") == "undo")
         
         # Count ACTUAL layers in document (not just events)
         layer_count = 0
@@ -686,7 +696,7 @@ class CHMExtension(Extension):
             # Fallback to event count if layer counting fails
             layer_count = sum(1 for e in session.events if e.get("type") in ["layer_created", "layer_added"])
         
-        self._log(f"[VIEW-DEBUG] Counted: strokes={stroke_count}, layers={layer_count}, imports={import_count}")
+        self._log(f"[VIEW-DEBUG] Counted: strokes={stroke_count}, layers={layer_count}, imports={import_count}, undos={undo_count}")
         
         # Get current classification (preview - not finalized)
         classification = session._classify(
@@ -727,6 +737,7 @@ class CHMExtension(Extension):
             "stroke_count": stroke_count,
             "layer_count": layer_count,
             "import_count": import_count,
+            "undo_count": undo_count,
             "classification": classification,
             "tracing_detected": tracing_detected,
             "tracing_percentage": tracing_percentage,

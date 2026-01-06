@@ -161,3 +161,4 @@ class PathPreferences:
         self.settings.remove("proof/last_directory")
         self.settings.sync()
 
+

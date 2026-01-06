@@ -39,3 +39,4 @@ def log_message(message, prefix="CHM"):
         # Fail silently - logging should never crash the plugin
         print(f"[LOGGING-ERROR] Failed to write to log file: {e}")
 
+

@@ -77,3 +77,4 @@ c2patool /path/to/exported_image.png
 
 These test certificates are provided for development purposes only. Production certificates must be obtained from trusted CAs.
 
+

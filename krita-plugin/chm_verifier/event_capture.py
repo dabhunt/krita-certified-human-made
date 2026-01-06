@@ -7,9 +7,92 @@ Captures Krita events (strokes, layers, imports) and records them to CHM session
 
 from krita import Krita
 from PyQt5.QtCore import QTimer, QObject, QEvent, Qt
-from PyQt5.QtWidgets import QOpenGLWidget, QWidget
+from PyQt5.QtWidgets import QOpenGLWidget, QWidget, QApplication, QShortcut
+from PyQt5.QtGui import QKeySequence
 import time
 from .import_tracker import ImportTracker
+
+
+class UndoRedoHandler(QObject):
+    """
+    Detects undo operations using QShortcut (ROAA Approach 3).
+    
+    Uses Qt's built-in shortcut system which is more reliable than event filters
+    since keyboard events are often consumed by focused widgets before reaching
+    the main window event filter.
+    
+    Captures:
+    - Ctrl+Z (Windows/Linux) / Cmd+Z (Mac) → Undo
+    
+    Note: We only track undos (not redos) as they are a stronger indicator
+    of human creative process (trial and error, refinement).
+    """
+    
+    def __init__(self, session_manager, event_capture, main_window=None, debug_log=True):
+        super().__init__()
+        self.session_manager = session_manager
+        self.event_capture = event_capture  # For accessing _log method
+        self.DEBUG_LOG = debug_log
+        self.shortcuts_installed = False
+        self.undo_shortcut = None
+        
+        self._log(f"[UndoHandler-INIT] UndoRedoHandler created with DEBUG_LOG={self.DEBUG_LOG}")
+        
+        # Install shortcuts if we have a main window
+        if main_window:
+            self._install_shortcuts(main_window)
+    
+    def _log(self, message):
+        """Use EventCapture's logging system"""
+        if self.event_capture and hasattr(self.event_capture, '_log'):
+            self.event_capture._log(message)
+        else:
+            # Fallback to direct print
+            print(f"CHM: EventCapture: {message}")
+            import sys
+            sys.stdout.flush()
+    
+    def _install_shortcuts(self, main_window):
+        """Install QShortcut for Cmd+Z / Ctrl+Z"""
+        if self.shortcuts_installed:
+            return
+        
+        try:
+            # QShortcut automatically handles Cmd (Mac) vs Ctrl (Win/Linux)
+            self.undo_shortcut = QShortcut(QKeySequence.Undo, main_window)
+            self.undo_shortcut.activated.connect(self._on_undo)
+            
+            self.shortcuts_installed = True
+            self._log("[UndoHandler] ✓ Undo shortcut installed (Ctrl+Z / Cmd+Z)")
+            
+        except Exception as e:
+            import traceback
+            self._log(f"[UndoHandler] ❌ Failed to install shortcuts: {e}")
+            self._log(f"[UndoHandler] Traceback: {traceback.format_exc()}")
+    
+    def _on_undo(self):
+        """Handle undo operation (called by QShortcut)"""
+        app = Krita.instance()
+        doc = app.activeDocument()
+        
+        self._log(f"[UndoHandler] 🔄 UNDO DETECTED! Active doc: {doc.name() if doc else 'None'}")
+        
+        if not doc:
+            self._log(f"[UndoHandler] ✗ No active document!")
+            return
+            
+        session = self.session_manager.get_session(doc)
+        
+        if session:
+            try:
+                session.record_undo_redo("undo")
+                self._log(f"[UndoHandler] ✓ Undo recorded! (total events: {session.event_count})")
+            except Exception as e:
+                import traceback
+                self._log(f"[UndoHandler] ❌ Error recording undo: {e}")
+                self._log(f"[UndoHandler] Traceback: {traceback.format_exc()}")
+        else:
+            self._log(f"[UndoHandler] ✗ No session found for document!")
 
 
 class CanvasEventFilter(QObject):
@@ -140,6 +223,12 @@ class EventCapture:
         self.canvas_event_filter = CanvasEventFilter(session_manager, debug_log)
         self.canvas_filter_installed = False
         
+        # Undo/Redo handler (QShortcut-based detection - ROAA Approach 3)
+        # Pass self so handler can use our _log method
+        # Note: main_window will be passed later in _install_undo_handler()
+        self.undo_redo_handler = UndoRedoHandler(session_manager, self, main_window=None, debug_log=debug_log)
+        self.undo_handler_installed = False
+        
         # Timer for polling-based detection (PRIMARY METHOD per krita-api-research.md)
         self.poll_timer = QTimer()
         self.poll_timer.timeout.connect(self.poll_changes)
@@ -217,6 +306,15 @@ class EventCapture:
         
         if self.DEBUG_LOG:
             self._log("[BFROS-FINAL] Using document.modified() polling for stroke detection (500ms interval)")
+        
+        # Install undo/redo handler on main window
+        self._install_undo_handler()
+        
+        # Retry undo handler with delays (window might need time to initialize)
+        QTimer.singleShot(500, self._install_undo_handler)
+        QTimer.singleShot(1000, self._install_undo_handler)
+        QTimer.singleShot(2000, self._install_undo_handler)
+        QTimer.singleShot(5000, self._install_undo_handler)
         
         self._log("Event capture started (global signals connected)")
         
@@ -504,6 +602,57 @@ class EventCapture:
             self._log(f"[PERSIST-ERROR] ❌ Exception: {e}")
             import traceback
             self._log(f"[PERSIST-ERROR] Traceback: {traceback.format_exc()}")
+    
+    def _install_undo_handler(self):
+        """
+        Install QShortcut-based undo handler on main window.
+        
+        Uses Qt's native QShortcut which is more reliable than event filters
+        since keyboard events are consumed by focused widgets.
+        """
+        if self.undo_handler_installed:
+            return True  # Already installed
+            
+        if self.DEBUG_LOG:
+            self._log("=== ATTEMPTING TO INSTALL UNDO HANDLER (QShortcut) ===")
+        
+        try:
+            app = Krita.instance()
+            active_window = app.activeWindow()
+            
+            if self.DEBUG_LOG:
+                self._log(f"[UndoHandler-Install] Krita app: {app}")
+                self._log(f"[UndoHandler-Install] Active window: {active_window}")
+            
+            if not active_window:
+                self._log("[UndoHandler-Install] No active window - will retry later")
+                return False
+            
+            # Get the Qt window widget
+            qwindow = active_window.qwindow()
+            
+            if self.DEBUG_LOG:
+                self._log(f"[UndoHandler-Install] QWindow: {qwindow}, type: {type(qwindow)}")
+            
+            if not qwindow:
+                self._log("[UndoHandler-Install] No qwindow available")
+                return False
+            
+            # Install shortcuts on the main window
+            self.undo_redo_handler._install_shortcuts(qwindow)
+            self.undo_handler_installed = True
+            
+            if self.DEBUG_LOG:
+                self._log("[UndoHandler-Install] ✓ Undo handler installed on main window")
+                self._log("[UndoHandler-Install]   → QShortcut will detect Ctrl/Cmd+Z")
+            
+            return True
+            
+        except Exception as e:
+            self._log(f"[UndoHandler-Install] ❌ Could not install handler: {e}")
+            import traceback
+            self._log(f"[UndoHandler-Install] Traceback: {traceback.format_exc()}")
+            return False
     
     def _install_canvas_event_filter(self):
         """
@@ -897,6 +1046,13 @@ class EventCapture:
         QTimer.singleShot(500, lambda: self._delayed_canvas_retry_simple("500ms after viewCreated"))
         QTimer.singleShot(1000, lambda: self._delayed_canvas_retry_simple("1000ms after viewCreated"))
         QTimer.singleShot(2000, lambda: self._delayed_canvas_retry_simple("2000ms after viewCreated"))
+        
+        # ALSO try undo handler when view is created (window might be ready now)
+        if self.DEBUG_LOG:
+            self._log("[BFROS] View created - attempting undo handler installation")
+        self._install_undo_handler()
+        QTimer.singleShot(200, self._install_undo_handler)
+        QTimer.singleShot(500, self._install_undo_handler)
         
         self.connect_view_signals(view)
     

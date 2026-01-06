@@ -208,7 +208,7 @@ class CHMtoC2PABuilder:
                     "stroke_count": stroke_count,
                     "layer_operations": summary.get('layer_operations_count', 0),
                     "imports": summary.get('imports_count', 0),
-                    "undo_redo": summary.get('undo_redo_count', 0)
+                    "undo_count": summary.get('undo_count', 0)  # Only track undos (stronger human behavior signal)
                 }
             })
         
