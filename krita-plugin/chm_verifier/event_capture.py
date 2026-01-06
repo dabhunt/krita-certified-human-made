@@ -455,16 +455,7 @@ class EventCapture:
                                 self._log(f"[RESUME-8-BFROS]   - Enabled AI plugins: {len(ai_plugins_enabled)}")
                                 self._log(f"[RESUME-8-BFROS]   - Total AI plugins: {len(ai_plugins_all)}")
                                 
-                                session.set_metadata(
-                                    document_name=doc.name(),
-                                    canvas_width=doc.width(),
-                                    canvas_height=doc.height(),
-                                    krita_version=app.version(),
-                                    os_info=f"{platform.system()} {platform.release()}",
-                                    ai_plugins_detected=len(ai_plugins_all) > 0
-                                )
-                                
-                                # Record AI plugins if enabled (update classification for current environment)
+                                # CRITICAL: Record AI plugins BEFORE set_metadata() so they get preserved
                                 if ai_plugins_enabled:
                                     self._log(f"[RESUME-8-BFROS] Recording {len(ai_plugins_enabled)} AI plugin(s) on resumed session...")
                                     for plugin in ai_plugins_enabled:
@@ -473,9 +464,19 @@ class EventCapture:
                                         self._log(f"[RESUME-8-BFROS]   → {plugin_name} ({plugin_type})")
                                         if hasattr(session, 'record_plugin_used'):
                                             session.record_plugin_used(plugin_name, plugin_type)
-                                            self._log(f"[RESUME-8-BFROS]   ✓ Recorded plugin on resumed session")
+                                            self._log(f"[RESUME-8-BFROS]   ✓ Recorded plugin: ai_tools_used should now be True")
                                 else:
                                     self._log(f"[RESUME-8-BFROS] No AI plugins enabled (session remains as-is)")
+                                
+                                # NOW set other metadata (will preserve AI fields set above)
+                                session.set_metadata(
+                                    document_name=doc.name(),
+                                    canvas_width=doc.width(),
+                                    canvas_height=doc.height(),
+                                    krita_version=app.version(),
+                                    os_info=f"{platform.system()} {platform.release()}",
+                                    ai_plugins_detected=len(ai_plugins_all) > 0
+                                )
                                 
                                 # Verify metadata
                                 metadata = session.get_metadata()
