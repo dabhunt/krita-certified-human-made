@@ -446,16 +446,46 @@ class EventCapture:
                             # Update metadata with current values (in case they were null or changed)
                             try:
                                 import platform
+                                
+                                # Get AI plugins for classification (check CURRENT state, not saved state)
+                                ai_plugins_enabled = self.plugin_monitor.get_enabled_ai_plugins() if self.plugin_monitor else []
+                                ai_plugins_all = self.plugin_monitor.get_ai_plugins() if self.plugin_monitor else []
+                                
+                                self._log(f"[RESUME-8-BFROS] Checking AI plugins on resumed session:")
+                                self._log(f"[RESUME-8-BFROS]   - Enabled AI plugins: {len(ai_plugins_enabled)}")
+                                self._log(f"[RESUME-8-BFROS]   - Total AI plugins: {len(ai_plugins_all)}")
+                                
                                 session.set_metadata(
                                     document_name=doc.name(),
                                     canvas_width=doc.width(),
                                     canvas_height=doc.height(),
                                     krita_version=app.version(),
-                                    os_info=f"{platform.system()} {platform.release()}"
+                                    os_info=f"{platform.system()} {platform.release()}",
+                                    ai_plugins_detected=len(ai_plugins_all) > 0
                                 )
+                                
+                                # Record AI plugins if enabled (update classification for current environment)
+                                if ai_plugins_enabled:
+                                    self._log(f"[RESUME-8-BFROS] Recording {len(ai_plugins_enabled)} AI plugin(s) on resumed session...")
+                                    for plugin in ai_plugins_enabled:
+                                        plugin_name = plugin.get('display_name', plugin.get('name', 'Unknown'))
+                                        plugin_type = plugin.get('ai_type', 'AI_GENERATION')
+                                        self._log(f"[RESUME-8-BFROS]   → {plugin_name} ({plugin_type})")
+                                        if hasattr(session, 'record_plugin_used'):
+                                            session.record_plugin_used(plugin_name, plugin_type)
+                                            self._log(f"[RESUME-8-BFROS]   ✓ Recorded plugin on resumed session")
+                                else:
+                                    self._log(f"[RESUME-8-BFROS] No AI plugins enabled (session remains as-is)")
+                                
+                                # Verify metadata
+                                metadata = session.get_metadata()
+                                self._log(f"[RESUME-8-BFROS] Final metadata: ai_tools_used={metadata.get('ai_tools_used', False)}, ai_tools_list={metadata.get('ai_tools_list', [])}")
+                                
                                 self._log(f"[RESUME-8a] ✓ Metadata updated with current values")
                             except Exception as e:
                                 self._log(f"[RESUME-8a] ⚠️ Error updating metadata: {e}")
+                                import traceback
+                                self._log(f"[RESUME-8a] Traceback: {traceback.format_exc()}")
                             
                             session_resumed = True
                         else:
