@@ -462,9 +462,16 @@ class EventCapture:
                                         plugin_name = plugin.get('display_name', plugin.get('name', 'Unknown'))
                                         plugin_type = plugin.get('ai_type', 'AI_GENERATION')
                                         self._log(f"[RESUME-8-BFROS]   → {plugin_name} ({plugin_type})")
-                                        if hasattr(session, 'record_plugin_used'):
+                                        self._log(f"[RESUME-8-BFROS]   hasattr check: {hasattr(session, 'record_plugin_used')}")
+                                        self._log(f"[RESUME-8-BFROS]   session type: {type(session)}")
+                                        
+                                        try:
                                             session.record_plugin_used(plugin_name, plugin_type)
-                                            self._log(f"[RESUME-8-BFROS]   ✓ Recorded plugin: ai_tools_used should now be True")
+                                            self._log(f"[RESUME-8-BFROS]   ✓ Recorded plugin successfully")
+                                        except Exception as e:
+                                            self._log(f"[RESUME-8-BFROS]   ✗ ERROR recording plugin: {e}")
+                                            import traceback
+                                            self._log(f"[RESUME-8-BFROS]   Traceback: {traceback.format_exc()}")
                                 else:
                                     self._log(f"[RESUME-8-BFROS] No AI plugins enabled (session remains as-is)")
                                 
