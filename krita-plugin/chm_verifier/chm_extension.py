@@ -107,6 +107,7 @@ class CHMExtension(Extension):
         self.event_capture = EventCapture(
             self.session_manager,
             session_storage=self.session_storage,  # CRITICAL: Pass session_storage for persistence!
+            plugin_monitor=self.plugin_monitor,  # CRITICAL: Pass plugin_monitor for AI classification!
             debug_log=self.DEBUG_LOG
         )
         if self.DEBUG_LOG:
@@ -240,8 +241,16 @@ class CHMExtension(Extension):
             if reply == QMessageBox.No:
                 return
             
-            # Create session on-the-fly
-            session = self.session_manager.create_session(doc)
+            # Get AI plugins for classification
+            ai_plugins_enabled = self.plugin_monitor.get_enabled_ai_plugins() if self.plugin_monitor else []
+            ai_plugins_all = self.plugin_monitor.get_ai_plugins() if self.plugin_monitor else []
+            
+            # Create session on-the-fly WITH AI plugin detection
+            session = self.session_manager.create_session(
+                doc,
+                ai_plugins=ai_plugins_enabled,
+                ai_plugins_detected=len(ai_plugins_all) > 0
+            )
             import platform
             session.set_metadata(
                 document_name=doc.name(),
@@ -643,8 +652,20 @@ class CHMExtension(Extension):
         if not session:
             self._log(f"[VIEW] No session found for document '{doc.name()}', creating new session...")
             
-            # Create session proactively
-            session = self.session_manager.create_session(doc)
+            # Get AI plugins for classification
+            ai_plugins_enabled = self.plugin_monitor.get_enabled_ai_plugins() if self.plugin_monitor else []
+            ai_plugins_all = self.plugin_monitor.get_ai_plugins() if self.plugin_monitor else []
+            
+            self._log(f"[VIEW-BFROS] Creating session with AI plugin detection:")
+            self._log(f"[VIEW-BFROS]   - Enabled AI plugins: {len(ai_plugins_enabled)}")
+            self._log(f"[VIEW-BFROS]   - Total AI plugins: {len(ai_plugins_all)}")
+            
+            # Create session proactively WITH AI plugin information
+            session = self.session_manager.create_session(
+                doc,
+                ai_plugins=ai_plugins_enabled,
+                ai_plugins_detected=len(ai_plugins_all) > 0
+            )
             
             # Set metadata
             try:
@@ -698,12 +719,21 @@ class CHMExtension(Extension):
         
         self._log(f"[VIEW-DEBUG] Counted: strokes={stroke_count}, layers={layer_count}, imports={import_count}, undos={undo_count}")
         
+        # BFROS: Log metadata BEFORE classification
+        metadata = session.get_metadata()
+        self._log(f"[VIEW-BFROS] Metadata BEFORE _classify():")
+        self._log(f"[VIEW-BFROS]   ai_tools_used: {metadata.get('ai_tools_used', False)}")
+        self._log(f"[VIEW-BFROS]   ai_tools_list: {metadata.get('ai_tools_list', [])}")
+        self._log(f"[VIEW-BFROS]   ai_plugins_detected: {metadata.get('ai_plugins_detected', False)}")
+        
         # Get current classification (preview - not finalized)
+        self._log(f"[VIEW-BFROS] Calling session._classify()...")
         classification = session._classify(
             doc=doc,
             doc_key=doc_key,
             import_tracker=self.event_capture.import_tracker
         )
+        self._log(f"[VIEW-BFROS] Classification result: {classification}")
         
         # Get tracing info
         tracing_detected = session.metadata.get("tracing_detected", False)
@@ -712,6 +742,11 @@ class CHMExtension(Extension):
         # Get AI tools info
         ai_tools_used = session.metadata.get("ai_tools_used", False)
         ai_tools_list = session.metadata.get("ai_tools_list", [])
+        
+        self._log(f"[VIEW-BFROS] Final session data:")
+        self._log(f"[VIEW-BFROS]   classification: {classification}")
+        self._log(f"[VIEW-BFROS]   ai_tools_used: {ai_tools_used}")
+        self._log(f"[VIEW-BFROS]   ai_tools_list: {ai_tools_list}")
         
         # Check if document has Mixed Media (any imports registered - sticky)
         imports_visible = None

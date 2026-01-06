@@ -210,9 +210,10 @@ class CanvasEventFilter(QObject):
 class EventCapture:
     """Captures and records Krita events to CHM sessions"""
     
-    def __init__(self, session_manager, session_storage=None, debug_log=True):
+    def __init__(self, session_manager, session_storage=None, plugin_monitor=None, debug_log=True):
         self.session_manager = session_manager
         self.session_storage = session_storage  # For persisting sessions
+        self.plugin_monitor = plugin_monitor  # For AI plugin detection
         self.DEBUG_LOG = debug_log
         self.connected_views = set()  # Track which views have signals connected
         self.connected_documents = set()  # Track which documents have signals
@@ -481,7 +482,18 @@ class EventCapture:
                 self._log(f"[RESUME-9] Creating NEW session for: {doc.name()}")
             
             try:
-                session = self.session_manager.create_session(doc)
+                # Get AI plugins for classification
+                ai_plugins_enabled = self.plugin_monitor.get_enabled_ai_plugins() if self.plugin_monitor else []
+                ai_plugins_all = self.plugin_monitor.get_ai_plugins() if self.plugin_monitor else []
+                
+                if self.DEBUG_LOG:
+                    self._log(f"[RESUME-9-BFROS] AI plugins: {len(ai_plugins_enabled)} enabled, {len(ai_plugins_all)} total")
+                
+                session = self.session_manager.create_session(
+                    doc,
+                    ai_plugins=ai_plugins_enabled,
+                    ai_plugins_detected=len(ai_plugins_all) > 0
+                )
                 
                 if self.DEBUG_LOG:
                     self._log(f"[RESUME-10] ✓ Session created: {session.id}")
@@ -1755,7 +1767,16 @@ class EventCapture:
                     try:
                         from krita import Krita
                         app = Krita.instance()
-                        session = self.session_manager.create_session(doc)
+                        
+                        # Get AI plugins for classification
+                        ai_plugins_enabled = self.plugin_monitor.get_enabled_ai_plugins() if self.plugin_monitor else []
+                        ai_plugins_all = self.plugin_monitor.get_ai_plugins() if self.plugin_monitor else []
+                        
+                        session = self.session_manager.create_session(
+                            doc,
+                            ai_plugins=ai_plugins_enabled,
+                            ai_plugins_detected=len(ai_plugins_all) > 0
+                        )
                         
                         # Set metadata
                         import platform

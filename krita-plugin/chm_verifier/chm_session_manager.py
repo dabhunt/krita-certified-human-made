@@ -133,13 +133,15 @@ class CHMSessionManager:
             self._log(f"[DOC-KEY] ⚠️ Using fallback id() key: {fallback_key}")
         return fallback_key
         
-    def create_session(self, document, session_id=None):
+    def create_session(self, document, session_id=None, ai_plugins=None, ai_plugins_detected=False):
         """
         Create a new session for a document.
         
         Args:
             document: Krita document
             session_id: Optional specific session ID (for resuming with same ID)
+            ai_plugins: List of enabled AI plugins to record on session
+            ai_plugins_detected: Whether any AI plugins exist (enabled or not)
             
         Returns:
             CHMSession object
@@ -164,11 +166,30 @@ class CHMSessionManager:
         session.set_metadata(
             document_name=document.name() if document.name() else None,
             canvas_width=document.width() if document.width() else None,
-            canvas_height=document.height() if document.height() else None
+            canvas_height=document.height() if document.height() else None,
+            ai_plugins_detected=ai_plugins_detected
         )
+        
+        # Record AI plugins immediately (not just during finalization)
+        # This ensures classification works correctly when viewing current session
+        if ai_plugins:
+            self._log(f"[CREATE-SESSION-BFROS] Recording {len(ai_plugins)} AI plugin(s) on new session...")
+            for plugin in ai_plugins:
+                plugin_name = plugin.get('display_name', plugin.get('name', 'Unknown'))
+                plugin_type = plugin.get('ai_type', 'AI_GENERATION')
+                self._log(f"[CREATE-SESSION-BFROS]   → {plugin_name} ({plugin_type})")
+                if hasattr(session, 'record_plugin_used'):
+                    session.record_plugin_used(plugin_name, plugin_type)
+                    self._log(f"[CREATE-SESSION-BFROS]   ✓ Recorded plugin on session")
+        else:
+            self._log(f"[CREATE-SESSION-BFROS] No AI plugins to record (ai_plugins={ai_plugins})")
         
         self.active_sessions[doc_key] = session
         self._log(f"Created session {session.id} for document {doc_key}")
+        
+        # BFROS: Verify metadata was set correctly
+        metadata = session.get_metadata()
+        self._log(f"[CREATE-SESSION-BFROS] Session metadata after creation: ai_tools_used={metadata.get('ai_tools_used', False)}, ai_tools_list={metadata.get('ai_tools_list', [])}")
         
         return session
     
