@@ -20,6 +20,7 @@ import os
 import json
 import configparser
 from pathlib import Path
+from .logging_util import log_info
 
 
 class PluginMonitor:
@@ -160,6 +161,9 @@ class PluginMonitor:
         """
         import platform
         
+        self._log("[KRITARC-LOAD] ========================================")
+        self._log("[KRITARC-LOAD] STARTING kritarc loading process...")
+        
         # Find kritarc based on platform
         kritarc_path = None
         system = platform.system()
@@ -173,27 +177,40 @@ class PluginMonitor:
             if appdata:
                 kritarc_path = os.path.join(appdata, 'krita', 'kritarc')
         
+        self._log(f"[KRITARC-LOAD] Platform: {system}")
+        self._log(f"[KRITARC-LOAD] Expected path: {kritarc_path}")
+        self._log(f"[KRITARC-LOAD] File exists: {os.path.exists(kritarc_path) if kritarc_path else False}")
+        
         if not kritarc_path or not os.path.exists(kritarc_path):
-            self._log(f"[KRITARC] ⚠️  kritarc not found at {kritarc_path}, will use .desktop defaults")
+            self._log(f"[KRITARC-LOAD] ⚠️  kritarc not found, will use .desktop defaults")
+            self._log("[KRITARC-LOAD] ========================================")
             return
         
         try:
             self.kritarc_config = configparser.ConfigParser()
             self.kritarc_config.read(kritarc_path)
             
-            if self.DEBUG_LOG:
-                self._log(f"[KRITARC] ✓ Loaded kritarc from {kritarc_path}")
-                # Log all python plugin states for debugging
-                if 'python' in self.kritarc_config:
-                    python_section = self.kritarc_config['python']
-                    for key in python_section:
-                        if key.startswith('enable_'):
-                            plugin_name = key[7:]  # Remove 'enable_' prefix
-                            enabled = python_section[key].lower() == 'true'
-                            self._log(f"[KRITARC]   - {plugin_name}: {'ENABLED' if enabled else 'DISABLED'}")
+            self._log(f"[KRITARC-LOAD] ✓ Successfully loaded kritarc")
+            
+            # Log all python plugin states for debugging
+            if 'python' in self.kritarc_config:
+                python_section = self.kritarc_config['python']
+                self._log(f"[KRITARC-LOAD] Found [python] section with {len(python_section)} keys")
+                for key in python_section:
+                    if key.startswith('enable_'):
+                        plugin_name = key[7:]  # Remove 'enable_' prefix
+                        enabled = python_section[key].lower() == 'true'
+                        self._log(f"[KRITARC-LOAD]   - {plugin_name}: {'ENABLED' if enabled else 'DISABLED'}")
+            else:
+                self._log("[KRITARC-LOAD] ⚠️  No [python] section found in kritarc")
+                
+            self._log("[KRITARC-LOAD] ========================================")
         except Exception as e:
-            self._log(f"[KRITARC] ⚠️  Error loading kritarc: {e}")
+            self._log(f"[KRITARC-LOAD] ❌ Error loading kritarc: {e}")
+            import traceback
+            self._log(f"[KRITARC-LOAD] Traceback: {traceback.format_exc()}")
             self.kritarc_config = None
+            self._log("[KRITARC-LOAD] ========================================")
     
     def _get_runtime_enabled_state(self, plugin_name):
         """
@@ -206,23 +223,30 @@ class PluginMonitor:
         Returns:
             True if enabled, False if disabled
         """
-        if not self.kritarc_config or 'python' not in self.kritarc_config:
-            # No kritarc, return default (enabled)
+        self._log(f"[RUNTIME-STATE] Checking runtime state for: {plugin_name}")
+        
+        if not self.kritarc_config:
+            self._log(f"[RUNTIME-STATE]   → No kritarc_config loaded, returning default (enabled)")
+            return True
+            
+        if 'python' not in self.kritarc_config:
+            self._log(f"[RUNTIME-STATE]   → No [python] section in kritarc, returning default (enabled)")
             return True
         
         # Check for enable_<plugin_name> in [python] section
         enable_key = f"enable_{plugin_name}"
         python_section = self.kritarc_config['python']
         
+        self._log(f"[RUNTIME-STATE]   → Looking for key: {enable_key}")
+        
         if enable_key in python_section:
-            enabled = python_section[enable_key].lower() == 'true'
-            if self.DEBUG_LOG:
-                self._log(f"[RUNTIME-STATE] {plugin_name}: {enable_key}={'true' if enabled else 'false'} → {'ENABLED' if enabled else 'DISABLED'}")
+            raw_value = python_section[enable_key]
+            enabled = raw_value.lower() == 'true'
+            self._log(f"[RUNTIME-STATE]   → Found in kritarc: {enable_key}={raw_value} → {'ENABLED' if enabled else 'DISABLED'}")
             return enabled
         
         # Not in kritarc, return default (enabled)
-        if self.DEBUG_LOG:
-            self._log(f"[RUNTIME-STATE] {plugin_name}: not in kritarc, using default (enabled)")
+        self._log(f"[RUNTIME-STATE]   → Not found in kritarc, using default (enabled)")
         return True
     
     def _parse_desktop_file(self, desktop_path):
@@ -318,7 +342,7 @@ class PluginMonitor:
         return [p for p in self.get_ai_plugins() if p.get('enabled', False)]
     
     def _log(self, message):
-        """Debug logging helper"""
+        """Debug logging helper - writes to plugin_debug.log"""
         if self.DEBUG_LOG:
-            print(f"[PluginMonitor] {message}")
+            log_info(message, prefix="PluginMonitor")
 
