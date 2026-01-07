@@ -132,7 +132,8 @@ class CHMDockerWidget(DockWidget):
         
         self.strokes_label = QLabel("Strokes: --")
         self.layers_label = QLabel("Layers: --")
-        self.time_label = QLabel("Time: --")
+        self.drawing_time_label_main = QLabel("Drawing Time: --")
+        self.session_length_label = QLabel("Session Length: --")
         self.classification_label = QLabel("Classification: --")
         
         # Make classification stand out
@@ -142,7 +143,8 @@ class CHMDockerWidget(DockWidget):
         
         stats_layout.addWidget(self.strokes_label)
         stats_layout.addWidget(self.layers_label)
-        stats_layout.addWidget(self.time_label)
+        stats_layout.addWidget(self.drawing_time_label_main)
+        stats_layout.addWidget(self.session_length_label)
         stats_layout.addWidget(self.classification_label)
         
         layout.addWidget(stats_container)
@@ -150,9 +152,7 @@ class CHMDockerWidget(DockWidget):
         # === COLLAPSIBLE DETAILS ===
         # Advanced Stats Section
         self.advanced_section = CollapsibleSection("Advanced Stats")
-        self.undo_label = self.advanced_section.add_label("Undo operations: --")
         self.import_label = self.advanced_section.add_label("Imports: --")
-        self.drawing_time_label = self.advanced_section.add_label("Active drawing time: --")
         layout.addWidget(self.advanced_section)
         
         # AI Detection Section
@@ -250,15 +250,14 @@ class CHMDockerWidget(DockWidget):
             self.status_label.setText("Session: No document open")
             self.strokes_label.setText("Strokes: --")
             self.layers_label.setText("Layers: --")
-            self.time_label.setText("Time: --")
+            self.drawing_time_label_main.setText("Drawing Time: --")
+            self.session_length_label.setText("Session Length: --")
             self.classification_label.setText("Classification: --")
             self.export_btn.setEnabled(False)
             self.view_btn.setEnabled(False)
             
             # Update collapsible sections
-            self.undo_label.setText("Undo operations: --")
             self.import_label.setText("Imports: --")
-            self.drawing_time_label.setText("Active drawing time: --")
             self.ai_status_label.setText("No AI plugins detected")
             self.session_id_label.setText("Session ID: --")
             self.canvas_size_label.setText("Canvas: --")
@@ -279,7 +278,8 @@ class CHMDockerWidget(DockWidget):
             self.status_label.setText("Session: Active (no events yet)")
             self.strokes_label.setText("Strokes: 0")
             self.layers_label.setText("Layers: 0")
-            self.time_label.setText("Time: 0s")
+            self.drawing_time_label_main.setText("Drawing Time: 0s")
+            self.session_length_label.setText("Session Length: 0s")
             self.classification_label.setText("Classification: Pending")
             self.export_btn.setEnabled(True)  # Can export even with no events
             self.view_btn.setEnabled(True)
@@ -291,7 +291,6 @@ class CHMDockerWidget(DockWidget):
         # Count events by type
         stroke_count = sum(1 for e in session.events if e.get("type") == "stroke")
         import_count = sum(1 for e in session.events if e.get("type") == "import")
-        undo_count = sum(1 for e in session.events if e.get("type") == "undo_redo" and e.get("action") == "undo")
         
         # Count actual layers in document
         layer_count = 0
@@ -308,9 +307,13 @@ class CHMDockerWidget(DockWidget):
             self._log(f"Error counting layers: {e}")
             layer_count = sum(1 for e in session.events if e.get("type") in ["layer_created", "layer_added"])
         
-        # Format time
-        duration = session.duration_secs if hasattr(session, 'duration_secs') else 0
-        time_str = self._format_time(duration)
+        # Get time metrics
+        session_duration = session.duration_secs if hasattr(session, 'duration_secs') else 0
+        drawing_time = session.drawing_time_secs if hasattr(session, 'drawing_time_secs') else 0
+        
+        # Format times
+        session_length_str = self._format_time(session_duration)
+        drawing_time_str = self._format_time(drawing_time)
         
         # Get classification preview
         doc_key = self.extension.event_capture._get_doc_key(doc)
@@ -323,7 +326,8 @@ class CHMDockerWidget(DockWidget):
         # Update labels
         self.strokes_label.setText(f"Strokes: {stroke_count}")
         self.layers_label.setText(f"Layers: {layer_count}")
-        self.time_label.setText(f"Time: {time_str}")
+        self.drawing_time_label_main.setText(f"Drawing Time: {drawing_time_str}")
+        self.session_length_label.setText(f"Session Length: {session_length_str}")
         self.classification_label.setText(f"Classification: {classification}")
         
         # Enable buttons
@@ -333,11 +337,7 @@ class CHMDockerWidget(DockWidget):
         # === UPDATE COLLAPSIBLE SECTIONS ===
         
         # Advanced Stats
-        drawing_time = session.drawing_time_secs if hasattr(session, 'drawing_time_secs') else 0
-        drawing_time_str = self._format_time(drawing_time)
-        self.undo_label.setText(f"Undo operations: {undo_count}")
         self.import_label.setText(f"Imports: {import_count}")
-        self.drawing_time_label.setText(f"Active drawing time: {drawing_time_str}")
         
         # AI Detection
         metadata = session.get_metadata()
