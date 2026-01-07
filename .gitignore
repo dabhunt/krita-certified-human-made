@@ -1,19 +1,59 @@
-# Rust (kept for future optimization, not used in MVP)
+# =============================================================================
+# PRODUCTION GITIGNORE - Krita CHM Plugin
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# SECURITY-CRITICAL: Never commit these!
+# -----------------------------------------------------------------------------
+
+# Cryptographic keys and secrets
+*.key
+*.pem
+*.p12
+*.pfx
+.signing-key.secret
+.env
+.env.local
+.env.*.local
+secrets.json
+api_keys.json
+
+# Private/internal documentation (keep /docs/ for public docs)
+
+# User session data (contains encrypted artwork metadata)
+sessions/
+.chm/
+*.chm
+
+# Generated proofs (may contain user data)
+proofs/
+
+# Logs (may contain debugging info)
+*.log
+logs/
+
+# -----------------------------------------------------------------------------
+# Build Artifacts & Dependencies
+# -----------------------------------------------------------------------------
+
+# Rust
 /target/
 **/*.rs.bk
 *.pdb
-Cargo.lock
 
-# Built native libraries (not used in Python-only MVP)
-krita-plugin/chm_verifier/lib/*.so
-krita-plugin/chm_verifier/lib/*.dylib
-krita-plugin/chm_verifier/lib/*.pyd
+# Compiled libraries
+*.so
+*.dylib
+*.dll
+*.pyd
+*.a
+*.lib
+*.exe
 
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
 *.egg
 *.egg-info/
 dist/
@@ -21,60 +61,103 @@ build/
 .pytest_cache/
 .coverage
 htmlcov/
+.tox/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# -----------------------------------------------------------------------------
+# Development Environment
+# -----------------------------------------------------------------------------
 
 # Virtual environments
 venv/
 env/
 ENV/
 .venv
+.virtualenv
 
-# IDE
-# VS Code - track workspace settings, ignore user settings
+# IDE - VS Code
 !.vscode/
 .vscode/*
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
 !.vscode/settings.json
+
+# IDE - JetBrains
 .idea/
+
+# IDE - Vim/Emacs
 *.swp
 *.swo
 *~
-.DS_Store
+*.bak
 
-# Cursor IDE - ignore internal files
+# Cursor IDE
 .cursor/
 
-# Krita
+# -----------------------------------------------------------------------------
+# Operating System
+# -----------------------------------------------------------------------------
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+.directory
+
+# -----------------------------------------------------------------------------
+# Krita-Specific
+# -----------------------------------------------------------------------------
+
+# Krita autosave/backup files
 *.kra~
 *.kra-autosave.kra
 
-# CHM specific
-.chm/
-*.chm
-sessions/
-proofs/
+# Krita temp files
+.krita/
 
-# Vendor dependencies (PIL, imagehash, numpy, scipy - removed in favor of file-hash-only)
-krita-plugin/chm_verifier/vendor/
+# -----------------------------------------------------------------------------
+# Testing & CI
+# -----------------------------------------------------------------------------
 
-# Secrets
-*.key
-*.pem
-.env
-secrets.json
+# Test output
+test_output/
+coverage/
+.coverage.*
+htmlcov/
 
-# Build artifacts
-*.dylib
-*.dll
-*.exe
+# Temporary test files
+tmp/
+temp/
+*.tmp
 
-# Logs
-*.log
+# -----------------------------------------------------------------------------
+# Package Management (if using for plugin dependencies)
+# -----------------------------------------------------------------------------
 
-# Documentation (internal working docs, not for public repo)
 /docs/
+# Note: We vendor dependencies for distribution, but gitignore during dev
+# Uncomment if NOT vendoring:
+# krita-plugin/chm_verifier/vendor/
 
+# -----------------------------------------------------------------------------
+# Miscellaneous
+# -----------------------------------------------------------------------------
 
-# Master signing key for plugin integrity (NEVER COMMIT THIS!)
-.signing-key.secret
+# Compiled documentation
+_build/
+site/
+
+# Editor backups
+*.orig
