@@ -28,7 +28,7 @@ Go to: https://github.com/dabhunt/krita-certified-human-made/releases
 ### 3. Upload Assets
 Upload this file:
 - **Location**: `/Users/david/Documents/GitHub/krita-certified-human-made/releases/chm_verifier-v1.0.0.zip`
-- **Size**: 109 MB
+- **Size**: 909 KB
 - **Description**: Krita plugin distribution (all platforms)
 
 ### 4. Publish Settings
@@ -43,11 +43,11 @@ Click **"Publish release"**
 
 ### Main Distribution
 - **File**: `chm_verifier-v1.0.0.zip`
-- **Size**: 109 MB
+- **Size**: 909 KB
 - **Location**: `/Users/david/Documents/GitHub/krita-certified-human-made/releases/`
 - **Contents**: 
   - Complete Krita plugin
-  - Compiled Rust library (macOS)
+  - Compiled Rust library (macOS, 1.8 MB)
   - All Python files
   - User manual (HTML)
   - Desktop file
@@ -104,10 +104,11 @@ After publishing, test the installation process:
 
 ## Notes
 
-- The ZIP file is **not** in git (too large - 109 MB exceeds GitHub's 100 MB limit)
+- The ZIP file is **not** in git (kept in releases/ folder which is .gitignored)
 - The ZIP file will be uploaded directly to GitHub releases as an asset
 - GitHub automatically generates source code archives (zip/tar.gz) from the v1.0.0 tag
-- Plugin supports macOS, Linux, and Windows (platform-specific libraries included)
+- Plugin supports macOS, Linux, and Windows (macOS library included, other platforms build from source)
+- **Size optimization**: Removed unused vendor libraries (SciPy/NumPy) that were accidentally included — reduced from 109 MB to 909 KB!
 
 ## Success Criteria
 

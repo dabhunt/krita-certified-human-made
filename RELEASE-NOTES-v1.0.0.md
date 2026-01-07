@@ -285,7 +285,7 @@ Thank you to everyone who contributed to making this release possible. Your crea
 
 ## 📊 Release Assets
 
-- `chm_verifier-v1.0.0.zip` - Krita plugin (all platforms)
+- `chm_verifier-v1.0.0.zip` (909 KB) - Krita plugin (all platforms)
 - Source code (zip)
 - Source code (tar.gz)
 
