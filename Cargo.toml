@@ -1,6 +1,6 @@
 [package]
 name = "certified-human-made"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 authors = ["CHM Project Contributors"]
 description = "Rust core library for Certified Human-Made art verification"
