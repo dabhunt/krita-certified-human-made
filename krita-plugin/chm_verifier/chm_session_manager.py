@@ -376,26 +376,17 @@ class CHMSessionManager:
                 self._log(f"[IMPORT-5] ⚠️ No events in saved session data")
             
             if 'metadata' in session_data:
-                # Use set_metadata() to properly restore metadata via Rust API
-                metadata = session_data['metadata']
-                session.set_metadata(
-                    document_name=metadata.get('document_name'),
-                    canvas_width=metadata.get('canvas_width'),
-                    canvas_height=metadata.get('canvas_height'),
-                    krita_version=metadata.get('krita_version'),
-                    os_info=metadata.get('os_info'),
-                    ai_plugins_detected=metadata.get('ai_plugins_detected', False)
-                )
-                self._log(f"[IMPORT-6] Restored metadata via set_metadata()")
+                # Restore metadata (Python implementation uses dict)
+                session.metadata = session_data['metadata']
+                self._log(f"[IMPORT-6] Restored metadata: {list(session.metadata.keys())}")
                 
-                # If saved session had AI tools, record them
-                if metadata.get('ai_tools_used') and metadata.get('ai_tools_list'):
-                    self._log(f"[IMPORT-6a] Restoring AI plugin data from saved session...")
-                    for plugin_name in metadata.get('ai_tools_list', []):
-                        # Assume AI_GENERATION type for restored plugins
-                        session.record_plugin_used(plugin_name, 'AI_GENERATION')
-                        self._log(f"[IMPORT-6a]   → Restored: {plugin_name}")
-                    self._log(f"[IMPORT-6a] ✓ AI plugin data restored")
+                # Ensure AI fields exist (for compatibility)
+                if 'ai_tools_used' not in session.metadata:
+                    session.metadata['ai_tools_used'] = False
+                if 'ai_tools_list' not in session.metadata:
+                    session.metadata['ai_tools_list'] = []
+                if 'ai_plugins_detected' not in session.metadata:
+                    session.metadata['ai_plugins_detected'] = False
             
             # BUG#008 FIX: Restore drawing time
             if 'drawing_time_secs' in session_data:

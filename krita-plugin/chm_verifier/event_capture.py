@@ -455,25 +455,33 @@ class EventCapture:
                                 self._log(f"[RESUME-8-BFROS]   - Enabled AI plugins: {len(ai_plugins_enabled)}")
                                 self._log(f"[RESUME-8-BFROS]   - Total AI plugins: {len(ai_plugins_all)}")
                                 
-                                # CRITICAL: Record AI plugins BEFORE set_metadata() so they get preserved
+                                # CRITICAL: Set AI metadata directly (Python CHMSession uses dict, not Rust API)
                                 if ai_plugins_enabled:
-                                    self._log(f"[RESUME-8-BFROS] Recording {len(ai_plugins_enabled)} AI plugin(s) on resumed session...")
+                                    self._log(f"[RESUME-8-BFROS] Setting AI metadata for {len(ai_plugins_enabled)} plugin(s)...")
+                                    
+                                    # Directly set metadata fields (Python implementation)
+                                    session.metadata["ai_tools_used"] = True
+                                    session.metadata["ai_plugins_detected"] = True
+                                    
+                                    # Build list of plugin names
+                                    ai_tools_list = []
                                     for plugin in ai_plugins_enabled:
                                         plugin_name = plugin.get('display_name', plugin.get('name', 'Unknown'))
                                         plugin_type = plugin.get('ai_type', 'AI_GENERATION')
+                                        ai_tools_list.append(plugin_name)
                                         self._log(f"[RESUME-8-BFROS]   → {plugin_name} ({plugin_type})")
-                                        self._log(f"[RESUME-8-BFROS]   hasattr check: {hasattr(session, 'record_plugin_used')}")
-                                        self._log(f"[RESUME-8-BFROS]   session type: {type(session)}")
-                                        
-                                        try:
-                                            session.record_plugin_used(plugin_name, plugin_type)
-                                            self._log(f"[RESUME-8-BFROS]   ✓ Recorded plugin successfully")
-                                        except Exception as e:
-                                            self._log(f"[RESUME-8-BFROS]   ✗ ERROR recording plugin: {e}")
-                                            import traceback
-                                            self._log(f"[RESUME-8-BFROS]   Traceback: {traceback.format_exc()}")
+                                    
+                                    session.metadata["ai_tools_list"] = ai_tools_list
+                                    self._log(f"[RESUME-8-BFROS]   ✓ AI metadata set: ai_tools_used=True, ai_tools_list={ai_tools_list}")
                                 else:
-                                    self._log(f"[RESUME-8-BFROS] No AI plugins enabled (session remains as-is)")
+                                    self._log(f"[RESUME-8-BFROS] No AI plugins enabled - metadata unchanged")
+                                    # Ensure fields exist even if no AI plugins
+                                    if "ai_tools_used" not in session.metadata:
+                                        session.metadata["ai_tools_used"] = False
+                                    if "ai_tools_list" not in session.metadata:
+                                        session.metadata["ai_tools_list"] = []
+                                    if "ai_plugins_detected" not in session.metadata:
+                                        session.metadata["ai_plugins_detected"] = len(ai_plugins_all) > 0
                                 
                                 # NOW set other metadata (will preserve AI fields set above)
                                 session.set_metadata(
