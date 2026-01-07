@@ -63,6 +63,7 @@ class PluginMonitor:
     def __init__(self, debug_log=True):
         self.DEBUG_LOG = debug_log
         self.detected_plugins = []
+        self.kritarc_config = None
         self._log("Plugin monitor initialized")
         
     def scan_plugins(self, plugin_directories):
@@ -76,7 +77,7 @@ class PluginMonitor:
             List of detected plugin dictionaries with:
             - name: Plugin folder/ID name
             - display_name: Human-readable name from .desktop file
-            - enabled: Whether plugin is enabled (from .desktop)
+            - enabled: Whether plugin is enabled (from kritarc runtime config)
             - is_ai: Whether it's an AI plugin (from registry)
             - type: Plugin type if AI (AI_GENERATION, etc.)
         """
@@ -85,6 +86,9 @@ class PluginMonitor:
         if not plugin_directories:
             self._log("No plugin directories provided")
             return self.detected_plugins
+        
+        # CRITICAL: Load kritarc to get actual runtime plugin state
+        self._load_kritarc()
         
         self._log(f"Scanning {len(plugin_directories)} directories...")
         
@@ -96,7 +100,8 @@ class PluginMonitor:
             self._scan_directory(plugin_dir)
         
         ai_count = len(self.get_ai_plugins())
-        self._log(f"Scan complete: {len(self.detected_plugins)} plugins detected ({ai_count} AI plugins)")
+        ai_enabled_count = len(self.get_enabled_ai_plugins())
+        self._log(f"Scan complete: {len(self.detected_plugins)} plugins detected ({ai_count} AI plugins, {ai_enabled_count} enabled)")
         
         return self.detected_plugins
     
@@ -147,6 +152,79 @@ class PluginMonitor:
         except Exception as e:
             self._log(f"Error scanning directory {plugin_dir}: {str(e)}")
     
+    def _load_kritarc(self):
+        """
+        Load kritarc configuration file to get actual runtime plugin state.
+        This is CRITICAL because users can enable/disable plugins in Krita UI,
+        and that state is stored in kritarc, NOT in .desktop files.
+        """
+        import platform
+        
+        # Find kritarc based on platform
+        kritarc_path = None
+        system = platform.system()
+        
+        if system == 'Darwin':  # macOS
+            kritarc_path = os.path.expanduser("~/Library/Preferences/kritarc")
+        elif system == 'Linux':
+            kritarc_path = os.path.expanduser("~/.config/kritarc")
+        elif system == 'Windows':
+            appdata = os.environ.get('APPDATA', '')
+            if appdata:
+                kritarc_path = os.path.join(appdata, 'krita', 'kritarc')
+        
+        if not kritarc_path or not os.path.exists(kritarc_path):
+            self._log(f"[KRITARC] ⚠️  kritarc not found at {kritarc_path}, will use .desktop defaults")
+            return
+        
+        try:
+            self.kritarc_config = configparser.ConfigParser()
+            self.kritarc_config.read(kritarc_path)
+            
+            if self.DEBUG_LOG:
+                self._log(f"[KRITARC] ✓ Loaded kritarc from {kritarc_path}")
+                # Log all python plugin states for debugging
+                if 'python' in self.kritarc_config:
+                    python_section = self.kritarc_config['python']
+                    for key in python_section:
+                        if key.startswith('enable_'):
+                            plugin_name = key[7:]  # Remove 'enable_' prefix
+                            enabled = python_section[key].lower() == 'true'
+                            self._log(f"[KRITARC]   - {plugin_name}: {'ENABLED' if enabled else 'DISABLED'}")
+        except Exception as e:
+            self._log(f"[KRITARC] ⚠️  Error loading kritarc: {e}")
+            self.kritarc_config = None
+    
+    def _get_runtime_enabled_state(self, plugin_name):
+        """
+        Get the actual runtime enabled state for a plugin from kritarc.
+        Falls back to .desktop file default if not found in kritarc.
+        
+        Args:
+            plugin_name: Plugin name (from .desktop filename)
+            
+        Returns:
+            True if enabled, False if disabled
+        """
+        if not self.kritarc_config or 'python' not in self.kritarc_config:
+            # No kritarc, return default (enabled)
+            return True
+        
+        # Check for enable_<plugin_name> in [python] section
+        enable_key = f"enable_{plugin_name}"
+        python_section = self.kritarc_config['python']
+        
+        if enable_key in python_section:
+            enabled = python_section[enable_key].lower() == 'true'
+            if self.DEBUG_LOG:
+                self._log(f"[RUNTIME-STATE] {plugin_name}: {enable_key}={'true' if enabled else 'false'} → {'ENABLED' if enabled else 'DISABLED'}")
+            return enabled
+        
+        # Not in kritarc, return default (enabled)
+        if self.DEBUG_LOG:
+            self._log(f"[RUNTIME-STATE] {plugin_name}: not in kritarc, using default (enabled)")
+        return True
+    
     def _parse_desktop_file(self, desktop_path):
         """
         Parse a .desktop file to extract plugin metadata
@@ -175,8 +253,9 @@ class PluginMonitor:
             # Plugin name is the .desktop filename without extension
             plugin_name = Path(desktop_path).stem
             
-            # Check if enabled (some .desktop files have X-KDE-PluginInfo-EnabledByDefault)
-            enabled = section.get('X-KDE-PluginInfo-EnabledByDefault', 'true').lower() == 'true'
+            # CRITICAL: Get ACTUAL runtime state from kritarc, not .desktop default
+            # Users can disable plugins in Krita UI, which updates kritarc
+            enabled = self._get_runtime_enabled_state(plugin_name)
             
             return {
                 'name': plugin_name,
