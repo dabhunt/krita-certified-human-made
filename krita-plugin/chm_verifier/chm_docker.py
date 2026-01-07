@@ -3,9 +3,10 @@ CHM Docker Widget - Persistent UI panel for CHM plugin
 
 Provides:
 - Live session statistics (updates every 5 seconds)
+- AI/Plugin detection status (always visible)
 - Quick Export with Proof button
 - Quick View Current Session button
-- Collapsible detailed information sections
+- Single "Advanced Info" collapsible section with additional details
 
 This file is part of the Certified Human-Made Krita Plugin.
 Copyright (C) 2026 Certified Human-Made
@@ -149,22 +150,18 @@ class CHMDockerWidget(DockWidget):
         
         layout.addWidget(stats_container)
         
+        # === AI/PLUGIN DETECTION (Always Visible) ===
+        self.ai_status_label = QLabel("No AI plugins detected")
+        self.ai_status_label.setWordWrap(True)
+        layout.addWidget(self.ai_status_label)
+        
         # === COLLAPSIBLE DETAILS ===
-        # Advanced Stats Section
-        self.advanced_section = CollapsibleSection("Advanced Stats")
+        # Single Advanced Info Section
+        self.advanced_section = CollapsibleSection("Advanced Info")
         self.import_label = self.advanced_section.add_label("Imports: --")
+        self.session_id_label = self.advanced_section.add_label("Session ID: --")
+        self.canvas_size_label = self.advanced_section.add_label("Canvas: --")
         layout.addWidget(self.advanced_section)
-        
-        # AI Detection Section
-        self.ai_section = CollapsibleSection("AI Detection")
-        self.ai_status_label = self.ai_section.add_label("No AI plugins detected")
-        layout.addWidget(self.ai_section)
-        
-        # Session Info Section
-        self.session_section = CollapsibleSection("Session Info")
-        self.session_id_label = self.session_section.add_label("Session ID: --")
-        self.canvas_size_label = self.session_section.add_label("Canvas: --")
-        layout.addWidget(self.session_section)
         
         # Separator
         line2 = QFrame()
@@ -253,12 +250,12 @@ class CHMDockerWidget(DockWidget):
             self.drawing_time_label_main.setText("Drawing Time: --")
             self.session_length_label.setText("Session Length: --")
             self.classification_label.setText("Classification: --")
+            self.ai_status_label.setText("No AI plugins detected")
             self.export_btn.setEnabled(False)
             self.view_btn.setEnabled(False)
             
-            # Update collapsible sections
+            # Update Advanced Info section
             self.import_label.setText("Imports: --")
-            self.ai_status_label.setText("No AI plugins detected")
             self.session_id_label.setText("Session ID: --")
             self.canvas_size_label.setText("Canvas: --")
             return
@@ -273,12 +270,12 @@ class CHMDockerWidget(DockWidget):
             self.drawing_time_label_main.setText("Drawing Time: --")
             self.session_length_label.setText("Session Length: --")
             self.classification_label.setText("Classification: --")
+            self.ai_status_label.setText("Save document to see AI detection")
             self.export_btn.setEnabled(False)
             self.view_btn.setEnabled(False)
             
-            # Clear collapsible sections
+            # Clear Advanced Info section
             self.import_label.setText("Imports: --")
-            self.ai_status_label.setText("Save document to see AI detection")
             self.session_id_label.setText("Session ID: --")
             self.canvas_size_label.setText("Canvas: --")
             return
@@ -346,12 +343,7 @@ class CHMDockerWidget(DockWidget):
         self.export_btn.setEnabled(True)
         self.view_btn.setEnabled(True)
         
-        # === UPDATE COLLAPSIBLE SECTIONS ===
-        
-        # Advanced Stats
-        self.import_label.setText(f"Imports: {import_count}")
-        
-        # AI Detection
+        # === UPDATE AI/PLUGIN DETECTION (Main Section) ===
         metadata = session.get_metadata()
         ai_tools_used = metadata.get('ai_tools_used', False)
         ai_tools_list = metadata.get('ai_tools_list', [])
@@ -365,7 +357,8 @@ class CHMDockerWidget(DockWidget):
         else:
             self.ai_status_label.setText("✓ No AI plugins detected")
         
-        # Session Info
+        # === UPDATE ADVANCED INFO SECTION ===
+        self.import_label.setText(f"Imports: {import_count}")
         self.session_id_label.setText(f"Session ID: {session.id[:16]}...")
         self.canvas_size_label.setText(f"Canvas: {doc.width()}x{doc.height()}px")
     

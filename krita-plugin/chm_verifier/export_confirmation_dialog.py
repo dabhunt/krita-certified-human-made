@@ -82,31 +82,53 @@ class ExportConfirmationDialog(QDialog):
         
         self.timestamp_label = QLabel("N/A")
         self.timestamp_label.setWordWrap(True)
-        self.database_label = QLabel("N/A")
-        self.database_label.setWordWrap(True)
         self.c2pa_label = QLabel("N/A")
         self.c2pa_label.setWordWrap(True)
         
         verify_layout.addRow("Timestamps:", self.timestamp_label)
-        verify_layout.addRow("Database:", self.database_label)
         verify_layout.addRow("C2PA:", self.c2pa_label)
         verify_group.setLayout(verify_layout)
         layout.addWidget(verify_group)
         
-        # Public timestamp link (if available)
-        self.timestamp_link_group = QGroupBox("Public Timestamp Proof")
-        timestamp_link_layout = QVBoxLayout()
+        # Public verification links (if available)
+        self.verification_link_group = QGroupBox("Public Verification")
+        verification_link_layout = QVBoxLayout()
+        
+        # CHM Website Verification Button (primary)
+        self.view_proof_btn = QPushButton("✅ View Proof on certified-human-made.org")
+        self.view_proof_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #55BF6E;
+                color: white;
+                font-weight: bold;
+                padding: 12px;
+                border-radius: 6px;
+                font-size: 12pt;
+            }
+            QPushButton:hover {
+                background-color: #4AAF62;
+            }
+        """)
+        self.view_proof_btn.clicked.connect(self.open_proof_website)
+        self.view_proof_btn.hide()  # Hidden by default
+        verification_link_layout.addWidget(self.view_proof_btn)
+        
+        # GitHub Gist Link (secondary, for technical users)
+        gist_link_label = QLabel("Technical proof data:")
+        gist_link_label.setStyleSheet("color: gray; font-size: 9pt; margin-top: 8px;")
+        verification_link_layout.addWidget(gist_link_label)
         
         self.timestamp_url_label = QLabel("")
         self.timestamp_url_label.setWordWrap(True)
         self.timestamp_url_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.timestamp_url_label.setCursor(QCursor(Qt.PointingHandCursor))
         self.timestamp_url_label.linkActivated.connect(self.open_url)
+        self.timestamp_url_label.setStyleSheet("font-size: 9pt;")
         
-        timestamp_link_layout.addWidget(self.timestamp_url_label)
-        self.timestamp_link_group.setLayout(timestamp_link_layout)
-        self.timestamp_link_group.hide()  # Hidden by default, shown if URL available
-        layout.addWidget(self.timestamp_link_group)
+        verification_link_layout.addWidget(self.timestamp_url_label)
+        self.verification_link_group.setLayout(verification_link_layout)
+        self.verification_link_group.hide()  # Hidden by default, shown if URL available
+        layout.addWidget(self.verification_link_group)
         
         # Buttons
         button_layout = QHBoxLayout()
@@ -173,7 +195,6 @@ class ExportConfirmationDialog(QDialog):
         
         # Verification status
         timestamp_status = export_data.get("timestamp_status", "Not timestamped")
-        database_status = export_data.get("database_status", "Not submitted")
         c2pa_status = export_data.get("c2pa_status", "Not embedded")
         
         # Style status labels based on success/failure
@@ -182,12 +203,6 @@ class ExportConfirmationDialog(QDialog):
             self.timestamp_label.setStyleSheet("color: green;")
         elif timestamp_status.startswith("⚠️"):
             self.timestamp_label.setStyleSheet("color: orange;")
-        
-        self.database_label.setText(database_status)
-        if database_status.startswith("✓"):
-            self.database_label.setStyleSheet("color: green;")
-        elif database_status.startswith("⚠️"):
-            self.database_label.setStyleSheet("color: orange;")
         
         self.c2pa_label.setText(c2pa_status)
         if c2pa_status.startswith("✓"):
@@ -198,10 +213,17 @@ class ExportConfirmationDialog(QDialog):
         # Public timestamp URL (if available)
         timestamp_url = export_data.get("timestamp_url", None)
         if timestamp_url:
+            # Extract gist ID from GitHub URL for our verification website
+            gist_id = self._extract_gist_id(timestamp_url)
+            if gist_id:
+                self.proof_website_url = f"https://certified-human-made.org/proof/{gist_id}"
+                self.view_proof_btn.show()
+            
+            # Show GitHub gist link as secondary option
             self.timestamp_url_label.setText(
-                f'<a href="{timestamp_url}">{timestamp_url}</a>'
+                f'<a href="{timestamp_url}">View on GitHub</a>'
             )
-            self.timestamp_link_group.show()
+            self.verification_link_group.show()
     
     def open_export_folder(self):
         """Open the folder containing the exported files"""
@@ -215,4 +237,37 @@ class ExportConfirmationDialog(QDialog):
     def open_url(self, url):
         """Open URL in default browser"""
         QDesktopServices.openUrl(QUrl(url))
+    
+    def open_proof_website(self):
+        """Open the CHM proof verification website"""
+        if hasattr(self, 'proof_website_url'):
+            QDesktopServices.openUrl(QUrl(self.proof_website_url))
+    
+    def _extract_gist_id(self, gist_url):
+        """
+        Extract gist ID from GitHub gist URL.
+        
+        Args:
+            gist_url: Full GitHub gist URL (e.g., https://gist.github.com/username/abc123)
+            
+        Returns:
+            Gist ID string or None if extraction fails
+        """
+        if not gist_url:
+            return None
+        
+        # GitHub gist URLs have format: https://gist.github.com/{username}/{gist_id}
+        # or sometimes: https://gist.github.com/{gist_id}
+        try:
+            parts = gist_url.rstrip('/').split('/')
+            # The gist ID is always the last part of the URL
+            gist_id = parts[-1]
+            
+            # Validate it looks like a gist ID (alphanumeric)
+            if gist_id and gist_id.replace('_', '').replace('-', '').isalnum():
+                return gist_id
+        except Exception:
+            pass
+        
+        return None
 

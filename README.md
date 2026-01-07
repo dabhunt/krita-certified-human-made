@@ -14,65 +14,129 @@ A privacy-first verification system for Krita that captures your creative proces
 
 ### Why This Matters
 
-In a world where AI can generate photorealistic art in seconds, **human creativity needs authentication**. Artists spend years developing their skills, and this plugin helps them prove it.
+In a world where AI can generate photorealistic art in seconds, **human creativity needs authentication**. Artists spend years developing their skills, and this system helps them prove it.
 
 **How do you prove you actually drew something?**
 
-CHM is a Krita plugin that:
+CHM is a **complete verification ecosystem** for digital art:
+
+**🎨 Krita Plugin** (This Repository):
 - ✅ **Captures** your drawing process (strokes, layers, timing)
 - ✅ **Analyzes** for AI assistance vs. pure human creation
-- ✅ **Generates** tamper-proof certificates with immutable GitHub timestamps
+- ✅ **Generates** tamper-proof certificates with immutable timestamps
 - ✅ **Protects** your privacy (only hashes uploaded, never your artwork)
+
+**🌐 Web Verification Tool** ([certified-human-made.org](https://certified-human-made.org)):
+- ✅ **Public verification** for anyone to check artwork authenticity
+- ✅ **Works with re-encoded images** (Twitter JPEG compression, Instagram, etc.)
+- ✅ **Displays proof details** (classification, timestamps, creation stats)
+- ✅ **C2PA compatible** (Content Authenticity Initiative standards)
+
+**The Complete Flow**:
+```
+You Create → Plugin Certifies → GitHub Timestamps → Anyone Can Verify
+```
 
 ### What You Get
 
-**Proof Certificate** (shareable):
+**Immutable Proof of Authorship**:
+- ✅ **GitHub Timestamp**: Permanent, public record (cannot be altered or backdated)
+- ✅ **Web Verification**: Anyone can verify your work at [certified-human-made.org](https://certified-human-made.org)
+- ✅ **C2PA Compatible**: Works alongside Content Authenticity Initiative standards
+- ✅ **Embedded in Image**: Proof data stored in PNG metadata (no separate files needed)
+
+**Example Proof Details**:
 ```json
 {
   "classification": "HumanMade",
-  "confidence": 0.95,
   "stroke_count": 1247,
-  "session_duration": "3h 42m",
-  "references_used": true,
-  "timestamps": {
-    "github": "2025-12-28T10:30:45Z",
-    "chm_log": 12345
-  }
+  "session_seconds": 13420,
+  "drawing_time": 8400,
+  "layer_count": 5,
+  "ai_tools": "None",
+  "timestamp": "2026-01-06T18:50:30Z",
+  "github_gist": "https://gist.github.com/..."
 }
 ```
 
-**Your Privacy**: Individual strokes, layer data, and artwork pixels **never leave your computer**.
+**Your Privacy**: Individual strokes, layer data, and artwork pixels **never leave your computer**. Only cryptographic hashes are uploaded for verification.
 
 ---
 
 ## 🚀 Quick Start
 
+### System Requirements
+
+**Krita Version**: 5.2.0 or newer  
+**Operating Systems**: Windows, Linux, macOS  
+**Internet**: Required for timestamp generation  
+
 ### Installation
 
-**Requirements**:
-- Krita 5.2+ (macOS, Windows, or Linux)
-- Internet connection (for timestamps)
+#### Step 1: Download the Plugin
 
-**Install via Krita Resources** (Coming Soon):
-1. Open Krita → Settings → Manage Resources
-2. Search for "Certified Human-Made"
-3. Click Install
+Download the latest release ZIP file from [GitHub Releases](https://github.com/armstrongl/krita-certified-human-made/releases).
 
-**Manual Install** (Current):
-1. Download latest release from [Releases](https://github.com/armstrongl/krita-certified-human-made/releases)
-2. Extract to Krita plugin directory:
-   - **macOS**: `~/Library/Application Support/krita/pykrita/`
-   - **Windows**: `%APPDATA%/krita/pykrita/`
-   - **Linux**: `~/.local/share/krita/pykrita/`
-3. Restart Krita
-4. Enable plugin: Settings → Configure Krita → Python Plugin Manager
+Remember where you save the ZIP file — you'll need it in the next step.
 
-### Usage
+#### Step 2: Install in Krita
 
-1. **Start Drawing** → CHM automatically tracks your session
-2. **Finish Artwork** → Tools → CHM → Generate Proof
-3. **Get Certificate** → Timestamped proof saved to `~/.local/share/chm/proofs/`
-4. **Share Proof** → Post on social media, include in portfolio
+1. **Open Krita**
+2. Go to **Tools** → **Scripts** → **Import Python Plugin from File...**
+
+   ![Import Python Plugin](https://docs.krita.org/en/_images/Krita_python_plugin_importer_dialog.png)
+
+3. Select the **ZIP file** you downloaded
+4. When prompted to enable the plugin, click **Yes**
+
+⚠️ **Note**: This will replace any previous installation of the CHM plugin.
+
+#### Step 3: Restart Krita
+
+**Krita must be restarted** for the plugin to load properly.
+
+#### Step 4: Verify Installation
+
+After restarting Krita:
+
+1. Go to **Settings** → **Configure Krita** (or **Krita** → **Preferences** on macOS)
+2. Select **Python Plugin Manager** from the left sidebar
+3. Find **"Certified Human-Made"** in the list and ensure it's checked ✅
+4. Click **OK**
+
+**Verification**: Open **Tools** → **Scripts** → **Scripter** and check the console for:
+- `"CHM: Setup called"`
+- `"CHM: Loaded CHM library version X.X.X"`
+- `"CHM: Event capture started"`
+
+If you see these messages, installation was successful! ✅
+
+### Getting Started
+
+1. **Create or Open** a document in Krita
+2. **Start Drawing** → CHM automatically tracks your creative process
+3. **Generate Proof** → Go to **Tools** → **Scripts** → **CHM Verifier** → **Generate Proof**
+4. **Get Immutable Timestamp** → Your proof is automatically registered on GitHub (public, verifiable)
+5. **Share Your Work** → Post your artwork anywhere — proof is linked to the image
+
+### Where Proofs Are Stored
+
+**Embedded in Image**: Proof data is automatically embedded in your exported PNG file metadata — no separate files to manage!
+
+**GitHub Gist**: Immutable public record viewable at the GitHub URL shown after generation
+
+**Your Exported Artwork**: Simply share your PNG file — the proof travels with it
+
+### Verify Any Image
+
+**Anyone can verify artwork** at [certified-human-made.org](https://certified-human-made.org):
+
+1. **Upload Image** → Drag and drop any artwork
+2. **Instant Verification** → Checks against CHM and C2PA authenticity standards
+3. **View Proof** → See creation details, timestamps, and classification
+4. **Share Results** → Link to verification results page
+
+**Works with re-encoded images!** Even if someone downloads your art from Twitter (compressed to JPEG), the verification system can still confirm it's your certified work using perceptual hashing.
 
 ---
 
@@ -81,9 +145,9 @@ CHM is a Krita plugin that:
 ### What Gets Uploaded (Public Timestamps)
 
 - ✅ SHA-256 hash of encrypted session (irreversible)
-- ✅ Classification ("PureHumanMade", "Referenced", etc.)
-- ✅ Aggregated counts (1247 strokes, 5 layers, 3h 42m)
-- ✅ Confidence score (0.95)
+- ✅ SHA-256 hash of exported artwork file
+- ✅ Classification ("HumanMade", "Referenced", "MixedMedia", "AIAssisted")
+- ✅ Aggregated counts (stroke count, layers, session duration)
 
 ### What NEVER Gets Uploaded
 
@@ -96,6 +160,93 @@ CHM is a Krita plugin that:
 **How It Works**: All session data encrypted locally (AES-256-GCM). Only a cryptographic hash is timestamped publicly. Even we cannot decrypt your creative process.
 
 **Read More**: [Privacy & Data Flow](docs/privacy-model.md)
+
+---
+
+## 🔧 Troubleshooting
+
+### Plugin Not Appearing in Plugin Manager
+
+**Issue**: CHM doesn't show up in the Python Plugin Manager list.
+
+**Solutions**:
+1. Ensure you installed via **Tools → Scripts → Import Python Plugin from File...**
+2. Check that you selected the **ZIP file** (not an extracted folder)
+3. Restart Krita after installation
+4. See the [detailed installation guide](krita-plugin/INSTALLATION.md) for manual installation steps
+
+### Plugin Won't Enable / Greyed Out
+
+**Issue**: The checkbox next to "Certified Human-Made" is greyed out or won't stay checked.
+
+**Solutions**:
+1. Check the Scripter console (**Tools → Scripts → Scripter**) for error messages
+2. Verify Krita version is 5.2.0 or newer: **Help → About Krita**
+3. Try reinstalling: Tools → Scripts → Import Python Plugin from File...
+4. On macOS: See [macOS-specific fixes](debug/fix-plugin-greyed-out.sh)
+
+### No Console Messages / Plugin Not Working
+
+**Issue**: Plugin appears enabled but doesn't show any messages or functionality.
+
+**Solutions**:
+1. **Restart Krita** after enabling the plugin
+2. Create a **new document** (some plugins require an active document)
+3. Open the **Scripter console** to see debug output: **Tools → Scripts → Scripter**
+4. Try generating a proof after drawing some strokes to confirm functionality
+
+### Network/Timestamp Issues
+
+**Issue**: Error generating proofs or "Network error" messages.
+
+**Solutions**:
+1. Ensure you have an **active internet connection**
+2. Check that GitHub is accessible (plugin uses GitHub Gist for timestamps)
+3. Try again in a few moments (temporary network issues)
+4. The plugin will still capture session data locally — timestamps can be added later
+
+### Need More Help?
+
+- **Installation Guide**: [krita-plugin/INSTALLATION.md](krita-plugin/INSTALLATION.md) — Detailed troubleshooting steps
+- **Testing Scripts**: See `debug/` folder for diagnostic tools
+- **Report Issues**: [GitHub Issues](https://github.com/armstrongl/krita-certified-human-made/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/armstrongl/krita-certified-human-made/discussions)
+
+⚠️ **Note**: Please do not seek help on official Krita channels — they are not responsible for third-party plugins. Use our GitHub instead!
+
+---
+
+## 🌐 Web Verification Tool
+
+### Verify Artwork at certified-human-made.org
+
+The CHM ecosystem includes a **free public verification tool** where anyone can check if an image has been certified as human-made:
+
+**Upload → Verify → Share**
+
+#### Features
+
+**Dual-Hash Verification**:
+- **Exact Match**: Original file verification (file_hash matches)
+- **Perceptual Match**: Works with re-encoded images (e.g., Twitter/Instagram compression)
+
+**What You Can See**:
+- ✅ Classification (HumanMade, Referenced, MixedMedia, Traced, AIAssisted)
+- ✅ Creation details (stroke count, session duration, drawing time, layers)
+- ✅ Triple timestamps (GitHub, Internet Archive, CHM Log)
+- ✅ AI tools detection (None, or which AI plugins were detected)
+- ✅ Platform and metadata (canvas size, Krita version)
+
+**How It Works**:
+1. **Artist creates** artwork in Krita with CHM plugin
+2. **Plugin generates proof** and registers cryptographic hash on GitHub
+3. **Anyone uploads image** to certified-human-made.org
+4. **System matches** the image (even if re-compressed) to the registered proof
+5. **Results displayed** with full transparency about creation process
+
+**Privacy Protected**: The verification system only stores cryptographic hashes. Your actual artwork, brush strokes, and creative process data remain on your computer.
+
+**Try It**: [certified-human-made.org](https://certified-human-made.org)
 
 ---
 
@@ -116,42 +267,77 @@ Brush Strokes → Layer Operations → Imports → Plugin Usage
 - **Tracing Analysis**: Compares imports vs. final artwork (edge correlation)
 - **Pattern Analysis**: Human vs. AI workflow patterns
 
-**Classification** (Highest to Lowest Verification Level):
+**Classification Levels**:
 1. `HumanMade`: Purely human work (references allowed if not traced/visible)
-2. `Traced`: Direct tracing detected (>33% edge correlation)
+2. `Referenced`: Used reference images for study (not traced)
 3. `MixedMedia`: Imported images visible in final export
-4. `AIAssisted`: AI plugins detected and enabled (lowest verification level)
-
-**Note**: Using reference images is normal and professional! References only affect classification if you directly trace over them (>33% edge correlation) or leave them visible in the final export. Hidden references used for anatomy/pose study maintain the `HumanMade` label.
+4. `Traced`: Direct tracing detected (>33% edge correlation)
+5. `AIAssisted`: AI plugins detected and enabled
 
 ### 3. Generate Proof & Timestamp
 
 ```
-Encrypted Session → SHA-256 Hash → Immutable Timestamp
-                                    ├─ GitHub Gist (public, third-party)
-                                    └─ CHM Local Log (HMAC-signed)
+Encrypted Session → Dual Hashes → Immutable Timestamps → Web Database
+                   ├─ File Hash (SHA-256)         ↓
+                   └─ Perceptual Hash (pHash)     ↓
+                                           GitHub Gist (public)
+                                           Internet Archive
+                                           CHM Local Log
 ```
 
-**Why GitHub Gist?** (Not Blockchain)
-- ✅ **Immutable**: Git's cryptographic commit history provides proof-of-existence
-- ✅ **Third-party verified**: Not controlled by user or CHM
-- ✅ **Legally recognized**: Git commits are court-admissible
-- ✅ **Zero cost**: No fees, unlimited public gists
-- ✅ **Publicly auditable**: Anyone can verify the timestamp
-- ✅ **No blockchain needed**: No crypto stigma, environmentally friendly
+**Dual-Hash System**:
+- **File Hash**: Exact file verification (proves unmodified original)
+- **Perceptual Hash**: Visual content verification (survives JPEG compression, format changes)
 
-**Local CHM Log**: HMAC-signed append-only log provides supplementary verification for offline access
+**Why This Matters**: Your artwork shared on Twitter/Instagram gets compressed to JPEG. The perceptual hash ensures verification still works even when the file is re-encoded!
+
+**Triple Timestamping** (Not Blockchain):
+- ✅ **GitHub Gist**: Immutable Git commit history (legally recognized)
+- ✅ **Internet Archive**: Wayback Machine snapshot (third-party verification)
+- ✅ **CHM Public Log**: Append-only HMAC-signed log (offline verification)
+
+**Why Not Blockchain?**
+- ✅ **Zero cost**: No fees, no crypto needed
+- ✅ **Publicly auditable**: Anyone can verify timestamps
+- ✅ **Environmentally friendly**: No proof-of-work mining
+- ✅ **Legally recognized**: Git commits are court-admissible
+
+### 4. Public Verification (certified-human-made.org)
+
+```
+Anyone uploads image → Compute hashes → Database lookup
+                           ↓
+                    ┌──────┴──────┐
+              Exact Match    Perceptual Match
+                   ↓              ↓
+           "Original File"  "Visual Match - Re-encoded"
+                   ↓              ↓
+              Display Proof Details
+           (classification, strokes, session time, drawing time, AI tools, timestamps)
+```
+
+**Result**: Anyone can verify your artwork is human-made, even years later!
 
 ---
 
 ## 📖 Documentation
 
+### Krita Plugin
+
 - **[Architecture](krita-plugin/ARCHITECTURE.md)**: System design & data flow
+- **[Installation Guide](krita-plugin/INSTALLATION.md)**: Detailed setup instructions
 - **[Security Audit](docs/README-SECURITY-AUDIT.md)**: Comprehensive security review
 - **[Security Quick Reference](docs/SECURITY-QUICK-REFERENCE.md)**: Security features overview
 - **[Production Readiness](docs/PRODUCTION-READINESS.md)**: Release preparation status
 - **[Tamper Resistance Testing](docs/tamper-resistance-testing-guide.md)**: Manual testing guide
 - **[Automated Test Suite](tests/README-TAMPER-TESTS.md)**: Automated security tests
+
+### Web Verification Tool
+
+- **[Web App Integration Guide](../certified-human-made/Readme-webapp.txt)**: API specification for verification
+- **[Dual-Hash Strategy](../certified-human-made/Readme-webapp.txt#dual-hash-verification-strategy)**: How re-encoded image verification works
+- **[Verification Logic](../certified-human-made/Readme-webapp.txt#verification-logic)**: Step-by-step implementation
+- **Try It Live**: [certified-human-made.org](https://certified-human-made.org)
 
 ---
 
@@ -159,25 +345,60 @@ Encrypted Session → SHA-256 Hash → Immutable Timestamp
 
 ### Building from Source
 
-**Requirements**:
-- Rust 1.70+ ([install](https://rustup.rs))
-- Python 3.9+
-- Krita 5.2+
+**For Users**: See the [Installation](#installation) section above — you don't need to build from source!
 
-**Build**:
+**For Developers**:
+
+#### Requirements
+- **Rust** 1.70+ ([install](https://rustup.rs))
+- **Python** 3.9+ (Krita's bundled version)
+- **Krita** 5.2+
+- **Git**
+
+#### Build & Install
+
 ```bash
 # Clone repository
 git clone https://github.com/armstrongl/krita-certified-human-made.git
 cd krita-certified-human-made
 
-# Build Rust core
+# Build Rust core and install plugin (one command)
+./install-plugin.sh
+```
+
+The install script will:
+1. Build the Rust library with correct settings for Krita
+2. Copy/symlink the plugin to your Krita plugin directory
+3. Handle platform-specific configuration (macOS code signing, etc.)
+
+#### Manual Build Steps
+
+If you prefer manual control:
+
+```bash
+# Build Rust library
 cargo build --release
 
-# Copy plugin to Krita
-cp -r krita-plugin/chm_verifier ~/Library/Application\ Support/krita/pykrita/
+# Copy compiled library to plugin
+# macOS:
+cp target/release/libchm.dylib krita-plugin/chm_verifier/lib/chm.so
 
-# Restart Krita
+# Linux:
+cp target/release/libchm.so krita-plugin/chm_verifier/lib/chm.so
+
+# Windows:
+copy target\release\chm.pyd krita-plugin\chm_verifier\lib\chm.pyd
+
+# Install to Krita plugin directory (see platform paths below)
+# Then restart Krita
 ```
+
+**Platform-Specific Plugin Directories**:
+- **macOS**: `~/Library/Application Support/krita/pykrita/`
+- **Linux**: `~/.local/share/krita/pykrita/`
+- **Windows**: `%APPDATA%\krita\pykrita\`
+
+See [krita-plugin/INSTALLATION.md](krita-plugin/INSTALLATION.md) for detailed development setup instructions.
 
 **Run Tests**:
 ```bash
