@@ -158,6 +158,10 @@ class PluginMonitor:
         Load kritarc configuration file to get actual runtime plugin state.
         This is CRITICAL because users can enable/disable plugins in Krita UI,
         and that state is stored in kritarc, NOT in .desktop files.
+        
+        NOTE: kritarc is NOT a standard INI file - it starts with key=value pairs
+        without a section header, then has [section] blocks later. We extract
+        only the [python] section manually.
         """
         import platform
         
@@ -187,22 +191,38 @@ class PluginMonitor:
             return
         
         try:
-            self.kritarc_config = configparser.ConfigParser()
-            self.kritarc_config.read(kritarc_path)
+            # Read file and extract [python] section manually
+            # kritarc format: starts with key=value, then has [section] blocks
+            python_settings = {}
+            in_python_section = False
             
-            self._log(f"[KRITARC-LOAD] ✓ Successfully loaded kritarc")
+            with open(kritarc_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    
+                    # Check for section headers
+                    if line.startswith('['):
+                        # Entering a new section
+                        in_python_section = (line == '[python]')
+                        continue
+                    
+                    # If we're in [python] section, parse key=value pairs
+                    if in_python_section and '=' in line:
+                        key, value = line.split('=', 1)
+                        python_settings[key.strip()] = value.strip()
+            
+            self._log(f"[KRITARC-LOAD] ✓ Successfully parsed kritarc")
+            self._log(f"[KRITARC-LOAD] Found {len(python_settings)} settings in [python] section")
+            
+            # Store as a dict (we don't need full ConfigParser)
+            self.kritarc_config = python_settings
             
             # Log all python plugin states for debugging
-            if 'python' in self.kritarc_config:
-                python_section = self.kritarc_config['python']
-                self._log(f"[KRITARC-LOAD] Found [python] section with {len(python_section)} keys")
-                for key in python_section:
-                    if key.startswith('enable_'):
-                        plugin_name = key[7:]  # Remove 'enable_' prefix
-                        enabled = python_section[key].lower() == 'true'
-                        self._log(f"[KRITARC-LOAD]   - {plugin_name}: {'ENABLED' if enabled else 'DISABLED'}")
-            else:
-                self._log("[KRITARC-LOAD] ⚠️  No [python] section found in kritarc")
+            for key, value in python_settings.items():
+                if key.startswith('enable_'):
+                    plugin_name = key[7:]  # Remove 'enable_' prefix
+                    enabled = value.lower() == 'true'
+                    self._log(f"[KRITARC-LOAD]   - {plugin_name}: {'ENABLED' if enabled else 'DISABLED'}")
                 
             self._log("[KRITARC-LOAD] ========================================")
         except Exception as e:
@@ -228,19 +248,14 @@ class PluginMonitor:
         if not self.kritarc_config:
             self._log(f"[RUNTIME-STATE]   → No kritarc_config loaded, returning default (enabled)")
             return True
-            
-        if 'python' not in self.kritarc_config:
-            self._log(f"[RUNTIME-STATE]   → No [python] section in kritarc, returning default (enabled)")
-            return True
         
-        # Check for enable_<plugin_name> in [python] section
+        # Check for enable_<plugin_name> in python settings dict
         enable_key = f"enable_{plugin_name}"
-        python_section = self.kritarc_config['python']
         
         self._log(f"[RUNTIME-STATE]   → Looking for key: {enable_key}")
         
-        if enable_key in python_section:
-            raw_value = python_section[enable_key]
+        if enable_key in self.kritarc_config:
+            raw_value = self.kritarc_config[enable_key]
             enabled = raw_value.lower() == 'true'
             self._log(f"[RUNTIME-STATE]   → Found in kritarc: {enable_key}={raw_value} → {'ENABLED' if enabled else 'DISABLED'}")
             return enabled
