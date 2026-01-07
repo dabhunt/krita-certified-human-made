@@ -266,9 +266,21 @@ class CHMDockerWidget(DockWidget):
         # Check if document is saved
         filepath = doc.fileName()
         if not filepath:
-            self.status_label.setText("Session: Document not saved")
+            # Clear all stats and show prompt to save
+            self.status_label.setText("💾 Save your document to see session stats")
+            self.strokes_label.setText("Strokes: --")
+            self.layers_label.setText("Layers: --")
+            self.drawing_time_label_main.setText("Drawing Time: --")
+            self.session_length_label.setText("Session Length: --")
+            self.classification_label.setText("Classification: --")
             self.export_btn.setEnabled(False)
             self.view_btn.setEnabled(False)
+            
+            # Clear collapsible sections
+            self.import_label.setText("Imports: --")
+            self.ai_status_label.setText("Save document to see AI detection")
+            self.session_id_label.setText("Session ID: --")
+            self.canvas_size_label.setText("Canvas: --")
             return
         
         # Get session
