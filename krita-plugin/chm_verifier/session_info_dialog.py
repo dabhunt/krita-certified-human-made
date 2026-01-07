@@ -92,12 +92,10 @@ class SessionInfoDialog(QDialog):
         class_layout = QFormLayout()
         
         self.classification_label = QLabel("Loading...")
-        self.tracing_label = QLabel("N/A")
         self.imports_visible_label = QLabel("N/A")
         self.ai_tools_label = QLabel("N/A")
         
         class_layout.addRow("Current Classification:", self.classification_label)
-        class_layout.addRow("Tracing Detected:", self.tracing_label)
         class_layout.addRow("Imports Visible:", self.imports_visible_label)
         class_layout.addRow("AI Tools:", self.ai_tools_label)
         class_group.setLayout(class_layout)
@@ -184,21 +182,8 @@ class SessionInfoDialog(QDialog):
             self.classification_label.setStyleSheet("color: green; font-weight: bold;")
         elif classification == "AI-Assisted":
             self.classification_label.setStyleSheet("color: orange; font-weight: bold;")
-        elif classification == "Traced":
-            self.classification_label.setStyleSheet("color: red; font-weight: bold;")
         elif classification == "MixedMedia":
             self.classification_label.setStyleSheet("color: blue; font-weight: bold;")
-        
-        # Tracing info
-        tracing_detected = session_data.get("tracing_detected", False)
-        tracing_percentage = session_data.get("tracing_percentage", 0.0)
-        
-        if tracing_detected:
-            self.tracing_label.setText(f"⚠️ {tracing_percentage*100:.1f}%")
-            self.tracing_label.setStyleSheet("color: red; font-weight: bold;")
-        else:
-            self.tracing_label.setText("✓ 0.0%")
-            self.tracing_label.setStyleSheet("color: green;")
         
         # Imports visibility
         imports_visible = session_data.get("imports_visible", None)

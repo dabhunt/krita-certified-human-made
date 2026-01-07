@@ -118,7 +118,7 @@
     <ol>
         <li><strong>Real-time Capture:</strong> Monitors your brush strokes, layers, and workflow as you create</li>
         <li><strong>Privacy-First Analysis:</strong> All processing happens locally on your computer</li>
-        <li><strong>Smart Classification:</strong> Detects pure human work vs. AI-assisted vs. traced</li>
+        <li><strong>Smart Classification:</strong> Detects pure human work vs. AI-assisted vs. mixed media</li>
         <li><strong>Immutable Timestamp:</strong> Third-party verified timestamps via GitHub Gist's cryptographic commit history</li>
         <li><strong>Verifiable Certificates:</strong> Share proofs that anyone can verify</li>
     </ol>
@@ -131,34 +131,30 @@
             <th>Example</th>
         </tr>
         <tr>
-            <td><strong>Certified Human-Made</strong></td>
-            <td>Purely human work. References are allowed and don't disqualify this label—only if traced over or visible in final export.</td>
+            <td><strong>Human-Made</strong></td>
+            <td>Purely human work. No AI plugins detected, no imported images visible in final export.</td>
             <td>Drawing from imagination, life, or using hidden reference images for anatomy/pose study</td>
         </tr>
         <tr>
             <td><strong>Mixed Media</strong></td>
-            <td>Imported images remain visible in final export</td>
+            <td>Non-reference images imported (may be visible in final export)</td>
             <td>Photo collage with digital painting overlay</td>
         </tr>
         <tr>
-            <td><strong>Traced</strong></td>
-            <td>Direct tracing over imported images (&gt;33% edge correlation)</td>
-            <td>Line art traced over a photo reference</td>
-        </tr>
-        <tr>
             <td><strong>AI-Assisted</strong></td>
-            <td>AI plugins detected during creation (lowest verification level)</td>
+            <td>AI plugins detected and enabled during creation</td>
             <td>Stable Diffusion or AI generation tools used</td>
         </tr>
     </table>
     
     <div class="feature-box">
-        <h3>Important Note: References Are OK!</h3>
+        <h3>Important Note: Reference Images</h3>
         <p>
             Using reference images is a normal and professional part of the artistic process. 
-            The <strong>Human-Made</strong> classification allows references as long as you're not 
-            directly tracing them or leaving them visible in the final artwork. The system tracks 
-            reference usage transparently in the detailed metadata while maintaining the Human-Made label.
+            Hidden reference images used for anatomy study, pose reference, or color inspiration 
+            maintain the <strong>Human-Made</strong> classification. The system only classifies as 
+            <strong>Mixed Media</strong> when non-reference images are imported and may be visible 
+            in the final export.
         </p>
     </div>
 

@@ -70,7 +70,7 @@ cp -r krita-plugin/chm_verifier ~/Library/Application\ Support/krita/pykrita/
 3. **Test**: Run all tests (`cargo test`, manual Krita testing)
 4. **Commit**: Use conventional commits format:
    ```
-   feat: Add tracing detection algorithm
+   feat: Add import analysis algorithm
    fix: Correct session encryption key storage
    docs: Update privacy model documentation
    test: Add unit tests for proof generation

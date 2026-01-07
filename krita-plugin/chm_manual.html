@@ -70,7 +70,7 @@
     <ol>
         <li><strong>Real-time Capture:</strong> Monitors your brush strokes, layers, and workflow as you create</li>
         <li><strong>Privacy-First Analysis:</strong> All processing happens locally on your computer</li>
-        <li><strong>Smart Classification:</strong> Detects pure human work vs. AI-assisted vs. traced</li>
+        <li><strong>Smart Classification:</strong> Detects pure human work vs. AI-assisted vs. mixed media</li>
         <li><strong>Immutable Timestamp:</strong> Third-party verified timestamps via GitHub Gist's cryptographic commit history</li>
         <li><strong>Verifiable Certificates:</strong> Share proofs that anyone can verify</li>
     </ol>
@@ -83,29 +83,19 @@
             <th>Example</th>
         </tr>
         <tr>
-            <td><strong>Pure Human-Made</strong></td>
-            <td>No AI assistance, no tracing</td>
-            <td>Drawing from imagination or life</td>
-        </tr>
-        <tr>
-            <td><strong>Referenced</strong></td>
-            <td>Uses reference images but hand-drawn</td>
-            <td>Photo reference for anatomy study</td>
-        </tr>
-        <tr>
-            <td><strong>AI-Assisted</strong></td>
-            <td>AI plugins used for generation/editing</td>
-            <td>Stable Diffusion for backgrounds</td>
-        </tr>
-        <tr>
-            <td><strong>Traced</strong></td>
-            <td>Direct tracing over imported images</td>
-            <td>&gt;70% pixel overlap detected</td>
+            <td><strong>Human-Made</strong></td>
+            <td>No AI assistance, no imported images visible in final export</td>
+            <td>Drawing from imagination, life, or using hidden reference images</td>
         </tr>
         <tr>
             <td><strong>Mixed Media</strong></td>
-            <td>Imported images remain visible</td>
-            <td>Photo collage with painting</td>
+            <td>Non-reference images imported (may be visible in final export)</td>
+            <td>Photo collage with digital painting</td>
+        </tr>
+        <tr>
+            <td><strong>AI-Assisted</strong></td>
+            <td>AI plugins detected and enabled</td>
+            <td>Stable Diffusion for backgrounds</td>
         </tr>
     </table>
 

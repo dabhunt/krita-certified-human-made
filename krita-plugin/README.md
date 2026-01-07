@@ -11,26 +11,21 @@ In a world where AI can generate photorealistic art in seconds, **human creativi
 This Krita plugin:
 - ✅ Captures your creative process as you work
 - ✅ Generates cryptographic proof of human authorship
-- ✅ Detects AI assistance, tracing, and mixed media
+- ✅ Detects AI assistance and mixed media
 - ✅ Protects your privacy (data never leaves your computer unencrypted)
 - ✅ Provides a **Docker panel** for quick access to export and session stats
 
 ## Classification System
 
-The plugin assigns one of these labels (highest to lowest verification level):
+The plugin assigns one of these labels:
 
-1. **Human-Made**: Purely human work (highest verification level)
-2. **Traced**: Direct tracing over references (>33% edge correlation)
-3. **Mixed Media**: Imported images visible in final export
-4. **AI-Assisted**: AI plugins detected (lowest verification level)
+1. **Human-Made**: Purely human work (no AI plugins, no imported images visible in final export)
+2. **Mixed Media**: Non-reference images imported (may be visible in final export)
+3. **AI-Assisted**: AI plugins detected and enabled
 
-### Important: References Are OK!
+### Important: Reference Images
 
-Using reference images is a **normal and professional** part of the artistic process. References only affect your classification if:
-- You directly trace over them (>33% edge correlation), OR
-- They remain visible in the final exported artwork
-
-Hidden references used for anatomy study, pose reference, color inspiration, etc. are allowed and maintain the **Human-Made** label. The system transparently tracks reference usage in detailed metadata while keeping your top-level classification as Human-Made.
+Reference images used for study (anatomy, pose, color inspiration, etc.) that remain hidden in your final artwork maintain the **Human-Made** classification. The system detects and classifies as **Mixed Media** only when non-reference images are imported and may be visible in the final export.
 
 ## Using the Plugin
 

@@ -2,14 +2,14 @@
 
 **Prove your digital art is human-made, not AI-generated.**
 
-This is the first production release of the CHM Krita plugin — a privacy-first verification system that captures your creative process and generates cryptographic proof of human authorship.
+This is the first production release of the CHM Krita plugin: a privacy-first verification system that captures your creative process and generates cryptographic proof of human authorship.
 
 ## ✨ What's New in v1.0.0
 
 - ✅ **Production-ready plugin** for Krita 5.2+
 - ✅ **Automatic session tracking** as you create
 - ✅ **AI plugin detection** system
-- ✅ **Tracing analysis** with edge correlation
+- ✅ **Import analysis** for mixed media detection
 - ✅ **CHM Docker panel** with live session stats
 - ✅ **Triple timestamping** (GitHub, Internet Archive, CHM Log)
 - ✅ **Privacy-first design** (only hashes uploaded, never artwork)

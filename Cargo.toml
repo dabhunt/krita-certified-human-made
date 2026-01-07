@@ -30,7 +30,7 @@ base64 = "0.21"
 uuid = { version = "1.6", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 
-# Image processing for tracing detection (perceptual hashing)
+# Image processing for perceptual hashing
 # NOTE: Must use image 0.23 to match img_hash dependency
 image = "0.23"
 img_hash = "3.2"

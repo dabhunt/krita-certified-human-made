@@ -19,7 +19,7 @@ CHM is a privacy-first verification system for Krita that:
 **Krita Plugin** (This Release):
 - Automatic session tracking as you create
 - AI plugin detection
-- Tracing analysis
+- Import analysis for mixed media detection
 - Cryptographic proof generation
 - Docker panel with live stats
 
@@ -34,10 +34,8 @@ CHM is a privacy-first verification system for Krita that:
 ## ✨ Key Features
 
 ### 🔍 Automatic Classification
-- **HumanMade**: Purely human work (highest verification)
-- **Referenced**: Used reference images for study
-- **MixedMedia**: Imported images visible in final export
-- **Traced**: Direct tracing detected (>33% edge correlation)
+- **HumanMade**: Purely human work (no AI plugins, no imported images visible)
+- **MixedMedia**: Non-reference images imported (may be visible in final export)
 - **AIAssisted**: AI plugins detected and enabled
 
 ### 🔒 Privacy First
@@ -122,7 +120,7 @@ Krita must be restarted for the plugin to load.
 - **Rust Library**: High-performance cryptography and session management
 - **Python Plugin**: Krita integration with PyQt5 UI
 - **Event Capture**: Stroke, layer, and import tracking
-- **Classification Engine**: AI detection and tracing analysis
+- **Classification Engine**: AI detection and import analysis
 - **Timestamp Service**: GitHub Gist integration
 - **Docker Panel**: Real-time session monitoring
 
@@ -223,7 +221,7 @@ If you were using a pre-release version:
 ### v1.1.0 (Planned)
 - Additional AI plugin detection
 - Performance optimizations
-- Enhanced tracing detection
+- Enhanced import analysis
 - UI/UX improvements
 
 ### Future

@@ -174,8 +174,6 @@ class ExportConfirmationDialog(QDialog):
             self.classification_label.setStyleSheet("color: green; font-weight: bold;")
         elif classification == "AI-Assisted":
             self.classification_label.setStyleSheet("color: orange; font-weight: bold;")
-        elif classification == "Traced":
-            self.classification_label.setStyleSheet("color: red; font-weight: bold;")
         elif classification == "MixedMedia":
             self.classification_label.setStyleSheet("color: blue; font-weight: bold;")
         

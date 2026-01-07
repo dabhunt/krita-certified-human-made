@@ -231,7 +231,7 @@ The CHM ecosystem includes a **free public verification tool** where anyone can 
 - **Perceptual Match**: Works with re-encoded images (e.g., Twitter/Instagram compression)
 
 **What You Can See**:
-- ✅ Classification (HumanMade, Referenced, MixedMedia, Traced, AIAssisted)
+- ✅ Classification (HumanMade, MixedMedia, AIAssisted)
 - ✅ Creation details (stroke count, session duration, drawing time, layers)
 - ✅ Triple timestamps (GitHub, Internet Archive, CHM Log)
 - ✅ AI tools detection (None, or which AI plugins were detected)
@@ -264,15 +264,13 @@ Brush Strokes → Layer Operations → Imports → Plugin Usage
 ### 2. Analyze Locally
 
 - **AI Plugin Detection**: Scans for AI tools (Krita AI Diffusion, etc.)
-- **Tracing Analysis**: Compares imports vs. final artwork (edge correlation)
+- **Import Analysis**: Tracks imported images and their usage
 - **Pattern Analysis**: Human vs. AI workflow patterns
 
 **Classification Levels**:
-1. `HumanMade`: Purely human work (references allowed if not traced/visible)
-2. `Referenced`: Used reference images for study (not traced)
-3. `MixedMedia`: Imported images visible in final export
-4. `Traced`: Direct tracing detected (>33% edge correlation)
-5. `AIAssisted`: AI plugins detected and enabled
+1. `HumanMade`: Purely human work (no AI plugins, no imported images visible)
+2. `MixedMedia`: Non-reference images imported (may be visible in final export)
+3. `AIAssisted`: AI plugins detected and enabled
 
 ### 3. Generate Proof & Timestamp
 
@@ -449,7 +447,7 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 - **Testing**: Beta test on different OS/Krita versions
 - **Documentation**: Improve user guides, add translations
 - **AI Plugin Detection**: Maintain registry of AI plugins
-- **Tracing Detection**: Improve image comparison algorithms
+- **Import Detection**: Improve image analysis algorithms
 - **UI/UX**: Polish PyQt5 dialogs
 
 ---
@@ -474,44 +472,6 @@ This ensures compatibility with Krita's licensing and potential future integrati
 
 - **Issues**: [GitHub Issues](https://github.com/armstrongl/krita-certified-human-made/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/armstrongl/krita-certified-human-made/discussions)
-- **Krita Artists**: [Forum Thread](https://krita-artists.org) (coming soon)
-
----
-
-## 🗺️ Roadmap
-
-### v1.0.0-rc1 (Current - Production Ready ✅)
-- [x] Event capture implementation complete
-- [x] Session management with encryption
-- [x] Proof generation with ED25519 signatures
-- [x] GitHub Gist immutable timestamping
-- [x] AI plugin detection system
-- [x] Import tracking and classification
-- [x] Security audit passed (4/5 rating)
-- [x] Comprehensive test suite
-
-### v0.2.0-alpha (Phase 1 - In Progress)
-- [ ] Event capture implementation
-- [ ] Session management
-- [ ] Proof generation
-- [ ] Basic UI
-
-### v0.3.0-beta (Phase 2)
-- [ ] Classification engine
-- [ ] AI plugin detection
-- [ ] Tracing analysis
-- [ ] Comprehensive testing
-
-### v1.0.0 (Phase 3)
-- [ ] Public release
-- [ ] Krita Resources submission
-- [ ] Community feedback integration
-- [ ] Security audit
-
-### Future
-- [ ] Multi-language support
-- [ ] Advanced pattern analysis
-- [ ] Krita core integration proposal
 
 ---
 

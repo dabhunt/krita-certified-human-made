@@ -257,7 +257,7 @@ class EventCapture:
         # Count active polls instead of calculating elapsed time (simpler, less error-prone)
         self.active_poll_count = {}  # doc_id -> int (number of polls user was actively drawing)
         
-        # Tracing Detection: Perceptual hash comparison
+        # Import tracking for mixed media detection
         self.import_tracker = ImportTracker(debug_log=debug_log)
         
         # BUG#003 FIX: Delayed import detection for paste operations
@@ -273,7 +273,7 @@ class EventCapture:
         """
         BUG#005 FIX: Get consistent document key (DRY with session manager).
         
-        This ensures tracing detector and session manager use the SAME key,
+        This ensures import tracker and session manager use the SAME key,
         preventing data loss during session migration (unsaved → saved).
         
         Args:

@@ -741,10 +741,6 @@ class CHMExtension(Extension):
         )
         self._log(f"[VIEW-BFROS] Classification result: {classification}")
         
-        # Get tracing info
-        tracing_detected = session.metadata.get("tracing_detected", False)
-        tracing_percentage = session.metadata.get("tracing_percentage", 0.0)
-        
         # Get AI tools info
         ai_tools_used = session.metadata.get("ai_tools_used", False)
         ai_tools_list = session.metadata.get("ai_tools_list", [])
@@ -780,8 +776,6 @@ class CHMExtension(Extension):
             "import_count": import_count,
             "undo_count": undo_count,
             "classification": classification,
-            "tracing_detected": tracing_detected,
-            "tracing_percentage": tracing_percentage,
             "ai_tools_used": ai_tools_used,
             "ai_tools_list": ai_tools_list,
             "imports_visible": imports_visible
