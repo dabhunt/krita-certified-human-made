@@ -50,10 +50,9 @@ The CHM Krita plugin is a Python-based extension that captures artistic workflow
 │  │  └────────────────────────────────────────────────────┘    │  │
 │  │                           ↓                                 │  │
 │  │  ┌────────────────────────────────────────────────────┐    │  │
-│  │  │        Triple Timestamp (Network Access)           │    │  │
-│  │  │  - GitHub Gist API                                 │    │  │
-│  │  │  - Internet Archive                                │    │  │
-│  │  │  - CHM Public Log                                  │    │  │
+│  │  │   Immutable Timestamp (Network Access)             │    │  │
+│  │  │  - GitHub Gist API (public, third-party)           │    │  │
+│  │  │  - CHM Local Log (HMAC-signed, local)              │    │  │
 │  │  └────────────────────────────────────────────────────┘    │  │
 │  └───────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
@@ -176,25 +175,57 @@ Session {
   },
   "timestamps": {
     "github": "2026-01-06T10:30:45Z",
-    "archive": "2026-01-06T10:30:47Z"
+    "chm_log": 12345
   }
 }
 ```
 
-### 7. Timestamp Service (`timestamp_service.py`)
+### 7. CHM Docker Panel (`chm_docker.py`)
 
-**Responsibility**: Create immutable, third-party timestamps.
+**Responsibility**: Provide persistent UI for quick access to plugin features.
+
+**Key Features**:
+- Live session statistics (updates every 5 seconds)
+- One-click Export with Proof
+- One-click View Current Session
+- Collapsible detail sections (Advanced Stats, AI Detection, Session Info)
+- Visual classification indicator
+
+**UX Design**:
+- Non-intrusive dockable panel
+- At-a-glance key metrics always visible
+- Progressive disclosure via collapsible sections
+- Immediate action buttons
+- Real-time feedback as user works
+
+**Technical Details**:
+- Extends Krita's `DockWidget` class
+- QTimer-based updates (5-second intervals)
+- Custom `CollapsibleSection` widget for expandable details
+- Integrates with existing `export_with_proof()` and `view_current_session()` methods
+- Styled with Qt stylesheets for professional appearance
+
+### 8. Timestamp Service (`timestamp_service.py`)
+
+**Responsibility**: Create immutable, verifiable timestamps.
 
 **Services Used**:
-1. **GitHub Gist** - Creates public gist with proof hash
-2. **Internet Archive** - Submits to Wayback Machine
-3. **CHM Public Log** - (Optional) Public blockchain-free log
+1. **GitHub Gist** (Primary) - Creates public gist with proof hash, providing third-party verified, immutable timestamps via Git's cryptographic commit history
+2. **CHM Local Log** (Secondary) - HMAC-SHA256 signed append-only local log for offline verification
 
-**Why Not Blockchain?**: 
-- Zero cost vs. gas fees
-- No crypto stigma in art community
-- Legally recognized timestamps
-- More environmentally friendly
+**Why GitHub Gist?**:
+- ✅ Immutable Git commit history provides cryptographic proof-of-existence
+- ✅ Third-party verified (not controlled by user or CHM)
+- ✅ Legally recognized timestamps (Git commits are court-admissible)
+- ✅ Zero cost and no rate limits for public gists
+- ✅ Publicly auditable via GitHub's infrastructure
+- ✅ No blockchain needed (no crypto stigma, environmentally friendly)
+
+**Local Log Tamper Resistance**:
+- HMAC-SHA256 signatures prevent modification without detection
+- Append-only with sequential indices prevent selective deletion
+- Secret key stored with restrictive permissions (chmod 600)
+- Note: Provides integrity verification but not non-repudiation (user controls secret)
 
 ---
 
@@ -230,10 +261,9 @@ Session {
    - Sign with ED25519 (Rust or Python fallback)
    - Encrypt full session data
    ↓
-9. Triple Timestamp (Network Access)
-   - Upload proof hash to GitHub Gist
-   - Submit to Internet Archive
-   - Log to CHM public log
+9. Immutable Timestamp
+   - Upload proof hash to GitHub Gist (creates public, third-party verified timestamp)
+   - Record in local CHM log (HMAC-signed for integrity)
    ↓
 10. Save Proof Certificate
     ~/.local/share/chm/proofs/{artwork_name}_proof.json
@@ -267,7 +297,7 @@ Session {
 | `config.py` | Centralized configuration |
 | `logging_util.py` | Logging utilities |
 | `c2pa_builder.py` | C2PA metadata format |
-| `timestamp_service.py` | Triple timestamp API |
+| `timestamp_service.py` | GitHub Gist + local log timestamp API |
 | `api_client.py` | HTTP client for timestamps |
 | `png_metadata.py` | PNG metadata embedding |
 | `ed25519_pure.py` | Pure Python ED25519 (fallback) |
@@ -276,6 +306,7 @@ Session {
 
 | Module | Purpose |
 |--------|---------|
+| `chm_docker.py` | Docker panel with live stats and quick actions |
 | `verification_dialog.py` | Proof verification UI |
 | `session_info_dialog.py` | Session details UI |
 | `export_confirmation_dialog.py` | Proof export UI |

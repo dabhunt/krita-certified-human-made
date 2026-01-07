@@ -21,7 +21,7 @@ In a world where AI can generate photorealistic art in seconds, **human creativi
 CHM is a Krita plugin that:
 - ✅ **Captures** your drawing process (strokes, layers, timing)
 - ✅ **Analyzes** for AI assistance vs. pure human creation
-- ✅ **Generates** tamper-proof certificates with triple timestamps
+- ✅ **Generates** tamper-proof certificates with immutable GitHub timestamps
 - ✅ **Protects** your privacy (only hashes uploaded, never your artwork)
 
 ### What You Get
@@ -36,8 +36,7 @@ CHM is a Krita plugin that:
   "references_used": true,
   "timestamps": {
     "github": "2025-12-28T10:30:45Z",
-    "archive": "2025-12-28T10:30:47Z",
-    "chm_log": "2025-12-28T10:30:46Z"
+    "chm_log": 12345
   }
 }
 ```
@@ -96,7 +95,7 @@ CHM is a Krita plugin that:
 
 **How It Works**: All session data encrypted locally (AES-256-GCM). Only a cryptographic hash is timestamped publicly. Even we cannot decrypt your creative process.
 
-**Read More**: [Privacy & Data Flow](docs/triple-timestamp-system.md)
+**Read More**: [Privacy & Data Flow](docs/privacy-model.md)
 
 ---
 
@@ -128,29 +127,29 @@ Brush Strokes → Layer Operations → Imports → Plugin Usage
 ### 3. Generate Proof & Timestamp
 
 ```
-Encrypted Session → SHA-256 Hash → Triple Timestamp
-                                    ├─ GitHub Gist
-                                    ├─ Internet Archive
-                                    └─ CHM Public Log
+Encrypted Session → SHA-256 Hash → Immutable Timestamp
+                                    ├─ GitHub Gist (public, third-party)
+                                    └─ CHM Local Log (HMAC-signed)
 ```
 
-**Why Triple Timestamp?** (Not Blockchain)
-- ✅ Zero cost (all services free)
-- ✅ No crypto stigma (art community friendly)
-- ✅ Legally recognized (court-admissible)
-- ✅ Three independent sources = robust proof
+**Why GitHub Gist?** (Not Blockchain)
+- ✅ **Immutable**: Git's cryptographic commit history provides proof-of-existence
+- ✅ **Third-party verified**: Not controlled by user or CHM
+- ✅ **Legally recognized**: Git commits are court-admissible
+- ✅ **Zero cost**: No fees, unlimited public gists
+- ✅ **Publicly auditable**: Anyone can verify the timestamp
+- ✅ **No blockchain needed**: No crypto stigma, environmentally friendly
 
-**Read More**: [Triple Timestamp System](docs/triple-timestamp-system.md)
+**Local CHM Log**: HMAC-signed append-only log provides supplementary verification for offline access
 
 ---
 
 ## 📖 Documentation
 
-- **[Architecture](docs/architecture.md)**: System design & data flow
-- **[Privacy Model](docs/triple-timestamp-system.md)**: What data is uploaded
-- **[Krita API Research](docs/krita-api-research.md)**: How event capture works
-- **[Phase 0 Report](docs/phase0-completion-report.md)**: Development progress
-- **[Security Model](docs/security-model.md)**: Threat model & mitigations
+- **[Architecture](krita-plugin/ARCHITECTURE.md)**: System design & data flow
+- **[Security Audit](docs/README-SECURITY-AUDIT.md)**: Comprehensive security review
+- **[Security Quick Reference](docs/SECURITY-QUICK-REFERENCE.md)**: Security features overview
+- **[Production Readiness](docs/PRODUCTION-READINESS.md)**: Release preparation status
 - **[Tamper Resistance Testing](docs/tamper-resistance-testing-guide.md)**: Manual testing guide
 - **[Automated Test Suite](tests/README-TAMPER-TESTS.md)**: Automated security tests
 
@@ -185,7 +184,7 @@ cp -r krita-plugin/chm_verifier ~/Library/Application\ Support/krita/pykrita/
 # Rust tests
 cargo test
 
-# Triple timestamp tests (requires network)
+# Timestamp tests (requires network)
 cargo test --ignored
 
 # Python bindings test
@@ -245,8 +244,7 @@ This ensures compatibility with Krita's licensing and potential future integrati
 ## 🙏 Acknowledgments
 
 - **Krita Team**: Amazing open-source painting software
-- **GitHub**: Free git hosting & timestamp infrastructure
-- **Internet Archive**: Permanent archival & Wayback Machine
+- **GitHub**: Free git hosting & immutable timestamp infrastructure
 - **Art Community**: Feedback on privacy & usability
 
 ---
@@ -261,12 +259,15 @@ This ensures compatibility with Krita's licensing and potential future integrati
 
 ## 🗺️ Roadmap
 
-### v0.1.0-alpha (Current - Phase 0 Complete ✅)
-- [x] Development environment setup
-- [x] Krita plugin proof-of-concept
-- [x] Triple timestamp system validated
-- [x] PyO3 bindings working
-- [x] Krita API research complete
+### v1.0.0-rc1 (Current - Production Ready ✅)
+- [x] Event capture implementation complete
+- [x] Session management with encryption
+- [x] Proof generation with ED25519 signatures
+- [x] GitHub Gist immutable timestamping
+- [x] AI plugin detection system
+- [x] Import tracking and classification
+- [x] Security audit passed (4/5 rating)
+- [x] Comprehensive test suite
 
 ### v0.2.0-alpha (Phase 1 - In Progress)
 - [ ] Event capture implementation

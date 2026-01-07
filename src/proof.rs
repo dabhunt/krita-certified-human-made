@@ -18,14 +18,21 @@ pub struct EventSummary {
     pub undo_redo_count: usize,
 }
 
-/// Triple timestamp verification receipt
+/// Timestamp verification receipt
+/// 
+/// Contains timestamps from GitHub Gist (primary, third-party verified)
+/// and CHM local log (secondary, HMAC-signed).
+/// 
+/// Note: Struct name kept as 'TripleTimestampReceipt' for backwards compatibility.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TripleTimestampReceipt {
     pub github_gist_url: String,
     pub github_commit_sha: String,
     pub github_timestamp: String,
-    pub wayback_snapshot_url: String,
-    pub wayback_timestamp: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wayback_snapshot_url: Option<String>,  // Future: Internet Archive (not implemented)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wayback_timestamp: Option<String>,     // Future: Internet Archive (not implemented)
     pub chm_log_url: String,
     pub chm_log_index: u64,
     pub chm_timestamp: String,
@@ -64,7 +71,7 @@ pub struct SessionProof {
     /// ED25519 signature of this proof (signs all fields except this one)
     pub signature: String,
 
-    /// Optional triple timestamp receipt
+    /// Optional timestamp receipt (GitHub Gist + local CHM log)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub triple_timestamp_receipt: Option<TripleTimestampReceipt>,
 

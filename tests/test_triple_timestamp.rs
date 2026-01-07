@@ -1,12 +1,12 @@
 /*
- * Triple Timestamp Integration Test
+ * Timestamp Integration Test
  * 
  * Tests the core functionality of submitting proof hashes to:
- * 1. GitHub Gist (anonymous or authenticated)
- * 2. Internet Archive Wayback Machine
- * 3. CHM Public Transparency Log (placeholder for now)
+ * 1. GitHub Gist (primary, third-party verified, immutable)
+ * 2. CHM Local Log (secondary, HMAC-signed, local verification)
  * 
- * This validates Task 0.4 from the scratchpad.
+ * Note: Internet Archive Wayback Machine integration deferred to Phase 2.
+ * Note: File name kept as 'test_triple_timestamp.rs' for backwards compatibility.
  */
 
 use sha2::{Sha256, Digest};
@@ -179,31 +179,23 @@ fn test_chm_public_log_structure() {
     println!("✓ CHM Public Log structure validated");
 }
 
-/// Integration test: Submit to all three timestamp sources in parallel
+/// Integration test: Submit to both timestamp sources in parallel (GitHub Gist + CHM Log)
 #[tokio::test]
 #[ignore] // Requires network access - run with: cargo test --ignored test_triple_timestamp_parallel
 async fn test_triple_timestamp_parallel() {
     let proof_hash = generate_test_proof_hash();
-    println!("\n=== Testing Parallel Triple Timestamp Submission ===");
+    println!("\n=== Testing Parallel Timestamp Submission (GitHub + Local Log) ===");
     println!("Proof hash: {}\n", proof_hash);
     
     let start_time = std::time::Instant::now();
     
-    // Spawn all three timestamp operations in parallel
+    // Spawn both timestamp operations in parallel
     let github_handle = tokio::spawn(async move {
         println!("[GitHub] Starting...");
         // Simplified GitHub test (would use full implementation)
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
         println!("[GitHub] ✓ Complete");
         "github_timestamp"
-    });
-    
-    let wayback_handle = tokio::spawn(async move {
-        println!("[Wayback] Starting...");
-        // Simplified Wayback test (would use full implementation)
-        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-        println!("[Wayback] ✓ Complete");
-        "wayback_timestamp"
     });
     
     let chm_log_handle = tokio::spawn(async move {
@@ -214,25 +206,22 @@ async fn test_triple_timestamp_parallel() {
         "chm_log_timestamp"
     });
     
-    // Wait for all three to complete
-    let (github_result, wayback_result, chm_log_result) = tokio::join!(
+    // Wait for both to complete
+    let (github_result, chm_log_result) = tokio::join!(
         github_handle,
-        wayback_handle,
         chm_log_handle
     );
     
     let elapsed = start_time.elapsed();
     
     assert!(github_result.is_ok());
-    assert!(wayback_result.is_ok());
     assert!(chm_log_result.is_ok());
     
-    println!("\n=== Triple Timestamp Results ===");
+    println!("\n=== Timestamp Results (GitHub Gist + CHM Log) ===");
     println!("GitHub:  {}", github_result.unwrap());
-    println!("Wayback: {}", wayback_result.unwrap());
     println!("CHM Log: {}", chm_log_result.unwrap());
     println!("\nTotal time: {:?} (parallel execution)", elapsed);
-    println!("✓ All three timestamps recorded successfully\n");
+    println!("✓ Both timestamps recorded successfully\n");
 }
 
 /// Test rate limits and error handling

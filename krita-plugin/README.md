@@ -13,6 +13,7 @@ This Krita plugin:
 - ✅ Generates cryptographic proof of human authorship
 - ✅ Detects AI assistance, tracing, and mixed media
 - ✅ Protects your privacy (data never leaves your computer unencrypted)
+- ✅ Provides a **Docker panel** for quick access to export and session stats
 
 ## Classification System
 
@@ -30,6 +31,26 @@ Using reference images is a **normal and professional** part of the artistic pro
 - They remain visible in the final exported artwork
 
 Hidden references used for anatomy study, pose reference, color inspiration, etc. are allowed and maintain the **Human-Made** label. The system transparently tracks reference usage in detailed metadata while keeping your top-level classification as Human-Made.
+
+## Using the Plugin
+
+### CHM Docker Panel
+
+After installation, the CHM Docker panel provides quick access to all features:
+
+1. **Open the Docker**: Settings → Dockers → CHM Proof Exporter
+2. **View live stats**: Strokes, layers, time, classification (updates every 5 seconds)
+3. **Export with one click**: Click "Export with Proof" button
+4. **View session details**: Click "View Current Session" button
+5. **Expand details**: Click collapsible sections for advanced stats, AI detection, and session info
+
+The Docker can be positioned anywhere in your workspace (default: right side).
+
+### Menu Actions
+
+Alternative access via menu:
+- **Tools → CHM: Export with Proof** - Export your artwork with cryptographic proof
+- **Tools → CHM: View Current Session** - See detailed session statistics
 
 ## Installation
 

@@ -1,13 +1,14 @@
 """
-Triple Timestamp Service
+Immutable Timestamp Service
 
-Submits proof hashes to three independent timestamp sources:
-1. GitHub Gist (public, immutable git history)
-2. Internet Archive Wayback Machine (permanent archival) - DEFERRED TO PHASE 2
-3. CHM Public Log (self-hosted transparency log)
+Submits proof hashes to create verifiable, tamper-proof timestamps:
+1. GitHub Gist (primary) - Public, third-party verified, immutable Git commit history
+2. CHM Local Log (secondary) - HMAC-SHA256 signed append-only local log
 
-MVP: GitHub Gist + CHM Log (local file)
-Phase 2: Add Wayback Machine (requires hosted URL)
+GitHub Gist provides true non-repudiation (not user-controlled).
+Local log provides integrity verification and offline access.
+
+Future: Internet Archive Wayback Machine integration may be added (requires hosted URL).
 """
 
 import json
@@ -18,7 +19,12 @@ from datetime import datetime
 
 
 class TripleTimestampService:
-    """Service for timestamping proof hashes via three independent sources"""
+    """
+    Service for timestamping proof hashes via GitHub Gist (primary) and local CHM log (secondary).
+    
+    Note: Class name kept as 'TripleTimestampService' for backwards compatibility,
+    but currently implements dual timestamp system (GitHub Gist + local log).
+    """
     
     def __init__(self, config=None, debug_log=False, logger_func=None):
         """
@@ -138,7 +144,7 @@ class TripleTimestampService:
                 results['errors'].append(error_msg)
                 self._log(f"[TIMESTAMP] ✗ {error_msg}")
         
-        self._log(f"[TIMESTAMP] Timestamp submission complete: {results['success_count']}/3 succeeded")
+        self._log(f"[TIMESTAMP] Timestamp submission complete: {results['success_count']}/2 succeeded")
         
         return results
     
@@ -571,7 +577,7 @@ class TripleTimestampService:
 
 if __name__ == "__main__":
     # Test timestamp service
-    print("Testing Triple Timestamp Service...")
+    print("Testing Timestamp Service (GitHub Gist + Local Log)...")
     
     service = TripleTimestampService(debug_log=True)
     

@@ -27,12 +27,14 @@ from .api_client import CHMApiClient
 from .timestamp_service import TripleTimestampService
 from .path_preferences import PathPreferences
 from .session_storage import SessionStorage
+from .chm_docker import CHMDockerWidget
 
 
 class CHMExtension(Extension):
     """Main extension class for CHM plugin"""
     
     def __init__(self, parent):
+        
         self._debug_log("CHMExtension.__init__() called")
         super().__init__(parent)
         self.DEBUG_LOG = True  # Enable debug logging for MVP
@@ -41,6 +43,7 @@ class CHMExtension(Extension):
         self.plugin_monitor = None
         self.capture_active = False
         self.signing_key = None  # Secret key for HMAC signing (loaded in setup())
+        self.docker_widget = None  # Docker panel reference
         self._debug_log("CHMExtension.__init__() completed")
         
     def setup(self):
@@ -156,6 +159,9 @@ class CHMExtension(Extension):
         
         # Auto-start event capture
         self.start_capture()
+        
+        # Register Docker window
+        self._register_docker()
         
         self._log("CHM initialized successfully")
     
@@ -384,7 +390,7 @@ class CHMExtension(Extension):
                         self._log("[EXPORT] User cancelled due to duplicate")
                         return
             
-            # Submit proof hash to triple timestamp services (Task 1.13)
+            # Submit proof hash to timestamp services (GitHub Gist + local CHM log)
             import hashlib
             proof_hash = hashlib.sha256(json.dumps(proof_dict, sort_keys=True).encode()).hexdigest()
             
@@ -1077,6 +1083,36 @@ class CHMExtension(Extension):
         self._debug_log(f"[KEY-LOAD]   export CHM_SIGNING_KEY='your_key_here'")
         
         return None
+    
+    def _register_docker(self):
+        """Register the CHM Docker window"""
+        try:
+            from krita import Krita, DockWidgetFactory, DockWidgetFactoryBase
+            
+            self._log("[DOCKER] Registering CHM Docker window...")
+            
+            # Create factory function that returns configured Docker instances
+            def create_docker():
+                docker = CHMDockerWidget()
+                docker.set_extension(self)
+                return docker
+            
+            # Register with Krita
+            app = Krita.instance()
+            factory = DockWidgetFactory(
+                "chm_docker",  # Unique ID
+                DockWidgetFactoryBase.DockRight,  # Default position (right side)
+                create_docker  # Factory function
+            )
+            
+            app.addDockWidgetFactory(factory)
+            self._log("[DOCKER] ✅ Docker window registered successfully")
+            
+        except Exception as e:
+            self._log(f"[DOCKER] ⚠️ Failed to register Docker: {e}")
+            import traceback
+            self._log(f"[DOCKER] Traceback:\n{traceback.format_exc()}")
+            # Non-fatal - plugin continues without Docker
     
     def _log(self, message):
         """Debug logging helper"""
