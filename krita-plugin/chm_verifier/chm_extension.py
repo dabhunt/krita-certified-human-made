@@ -201,15 +201,6 @@ class CHMExtension(Extension):
         )
         view_proof_action.triggered.connect(self.view_current_session)
         self._log("Action created: CHM: View Current Session")
-        
-        # Test action to verify complete flow
-        test_action = window.createAction(
-            "chm_test_finalize",
-            "CHM: Test Finalize & Show Proof",
-            "tools/scripts"
-        )
-        test_action.triggered.connect(self.test_finalize_and_show_proof)
-        self._log("Action created: CHM: Test Finalize & Show Proof")
     
     def export_with_proof(self):
         """Export current document with CHM proof (Phase 2A)"""
@@ -799,79 +790,6 @@ class CHMExtension(Extension):
         
         self._log(f"[VIEW] Session info displayed: {session.id}, classification: {classification}, imports: {import_count}")
     
-    def test_finalize_and_show_proof(self):
-        """Test action to finalize current session and show proof dialog"""
-        self._log("[TEST] ========== TEST FINALIZE & SHOW PROOF ==========")
-        
-        from krita import Krita
-        app = Krita.instance()
-        doc = app.activeDocument()
-        
-        if not doc:
-            from PyQt5.QtWidgets import QMessageBox
-            QMessageBox.warning(
-                None,
-                "CHM Test",
-                "No active document. Please create a document and draw some strokes first."
-            )
-            return
-        
-        self._log(f"[TEST] Active document: {doc.name()}")
-        
-        # Get session
-        session = self.session_manager.get_session(doc)
-        if not session:
-            from PyQt5.QtWidgets import QMessageBox
-            QMessageBox.warning(
-                None,
-                "CHM Test",
-                "No session found for this document. The session may not have been created."
-            )
-            return
-        
-        self._log(f"[TEST] Session found: {session.id}, events: {session.event_count}")
-        
-        # Finalize session (this triggers FLOW-3)
-        try:
-            # Include AI plugins in finalization
-            ai_plugins = self.plugin_monitor.get_enabled_ai_plugins() if self.plugin_monitor else []
-            proof = self.session_manager.finalize_session(
-                doc,
-                ai_plugins=ai_plugins,
-                import_tracker=self.event_capture.import_tracker
-            )
-            
-            if not proof:
-                from PyQt5.QtWidgets import QMessageBox
-                QMessageBox.warning(
-                    None,
-                    "CHM Test",
-                    "Failed to finalize session (returned None)."
-                )
-                return
-            
-            self._log(f"[TEST] Proof finalized successfully")
-            
-            # Show verification dialog (this triggers FLOW-5)
-            from .verification_dialog import VerificationDialog
-            
-            dialog = VerificationDialog(proof_data=proof)
-            dialog.exec_()
-            
-            self._log("[TEST] ========== TEST COMPLETE ==========")
-            
-        except Exception as e:
-            import traceback
-            self._log(f"[TEST] ERROR: {e}")
-            self._log(f"[TEST] Traceback: {traceback.format_exc()}")
-            
-            from PyQt5.QtWidgets import QMessageBox
-            QMessageBox.critical(
-                None,
-                "CHM Test Error",
-                f"Error during test: {e}\n\nSee debug log for details."
-            )
-    
     def start_capture(self):
         """Start event capture"""
         if self.capture_active:
@@ -1019,9 +937,10 @@ class CHMExtension(Extension):
         Load secret signing key for HMAC proof signatures.
         
         Checks in order:
-        1. Environment variable: CHM_SIGNING_KEY
-        2. Config file: ~/.config/chm/signing_key.txt
-        3. Returns None (plugin refuses to start)
+        1. Embedded key (production - included in release package)
+        2. Environment variable: CHM_SIGNING_KEY (development override)
+        3. Config file: ~/.config/chm/signing_key.txt (development)
+        4. Returns None (plugin refuses to start)
         
         Returns:
             str or None: Base64-encoded signing key if available
@@ -1031,8 +950,33 @@ class CHMExtension(Extension):
         
         self._debug_log("[KEY-LOAD] ========== LOADING SIGNING KEY ==========")
         
-        # 1. Check environment variable
-        self._debug_log("[KEY-LOAD] Step 1: Checking environment variable CHM_SIGNING_KEY...")
+        # 1. Check for embedded key (production)
+        self._debug_log("[KEY-LOAD] Step 1: Checking embedded key (production)...")
+        try:
+            from .signing_key_embedded import get_embedded_key
+            key = get_embedded_key()
+            if key:
+                # Validate key format (should be base64)
+                try:
+                    decoded = base64.b64decode(key)
+                    if len(decoded) >= 16:  # At least 128 bits
+                        self._debug_log(f"[KEY-LOAD] ✓ Loaded embedded key (production mode)")
+                        self._debug_log(f"[KEY-LOAD] Key length: {len(decoded)} bytes")
+                        self._debug_log(f"[KEY-LOAD] Key fingerprint: {key[:8]}...{key[-8:]}")
+                        return key
+                    else:
+                        self._debug_log(f"[KEY-LOAD] ⚠️ Embedded key too short ({len(decoded)} bytes), need >= 16")
+                except Exception as e:
+                    self._debug_log(f"[KEY-LOAD] ⚠️ Invalid base64 in embedded key: {e}")
+            else:
+                self._debug_log("[KEY-LOAD] ⚠️ Embedded key returned empty")
+        except ImportError:
+            self._debug_log("[KEY-LOAD] ℹ️  No embedded key found (development mode)")
+        except Exception as e:
+            self._debug_log(f"[KEY-LOAD] ⚠️ Error loading embedded key: {e}")
+        
+        # 2. Check environment variable (development override)
+        self._debug_log("[KEY-LOAD] Step 2: Checking environment variable CHM_SIGNING_KEY...")
         key = os.environ.get('CHM_SIGNING_KEY')
         if key:
             # Validate key format (should be base64, ~44 chars for 32 bytes)
@@ -1049,8 +993,8 @@ class CHMExtension(Extension):
         else:
             self._debug_log("[KEY-LOAD] ✗ Environment variable not set")
         
-        # 2. Check config file
-        self._debug_log("[KEY-LOAD] Step 2: Checking config file...")
+        # 3. Check config file (development)
+        self._debug_log("[KEY-LOAD] Step 3: Checking config file...")
         config_dir = os.path.expanduser("~/.config/chm")
         key_file = os.path.join(config_dir, "signing_key.txt")
         
@@ -1080,10 +1024,14 @@ class CHMExtension(Extension):
         else:
             self._debug_log(f"[KEY-LOAD] ✗ Key file not found")
         
-        # 3. No key found - CRITICAL ERROR
+        # 4. No key found - CRITICAL ERROR
         self._debug_log("[KEY-LOAD] ========== NO SIGNING KEY FOUND ==========")
         self._debug_log("[KEY-LOAD] ❌ CRITICAL: Plugin cannot start without signing key")
-        self._debug_log(f"[KEY-LOAD] To generate a key:")
+        self._debug_log(f"[KEY-LOAD] This usually means:")
+        self._debug_log(f"[KEY-LOAD]   - Production: Plugin was packaged incorrectly (missing embedded key)")
+        self._debug_log(f"[KEY-LOAD]   - Development: Need to generate signing key")
+        self._debug_log(f"[KEY-LOAD]")
+        self._debug_log(f"[KEY-LOAD] For development, generate a key:")
         self._debug_log(f"[KEY-LOAD]   python3 scripts/generate-signing-key.py")
         self._debug_log(f"[KEY-LOAD] Or set environment variable:")
         self._debug_log(f"[KEY-LOAD]   export CHM_SIGNING_KEY='your_key_here'")
