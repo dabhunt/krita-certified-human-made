@@ -12,6 +12,19 @@ from PyQt5.QtGui import QKeySequence
 import time
 from .import_tracker import ImportTracker
 
+# Import safe_flush utility for Windows compatibility
+try:
+    from .logging_util import safe_flush
+except ImportError:
+    # Fallback if logging_util not available
+    import sys
+    def safe_flush():
+        if sys.stdout is not None:
+            try:
+                safe_flush()
+            except (AttributeError, ValueError):
+                pass
+
 
 class UndoRedoHandler(QObject):
     """
@@ -50,7 +63,7 @@ class UndoRedoHandler(QObject):
             # Fallback to direct print
             print(f"CHM: EventCapture: {message}")
             import sys
-            sys.stdout.flush()
+            safe_flush()
     
     def _install_shortcuts(self, main_window):
         """Install QShortcut for Cmd+Z / Ctrl+Z"""
@@ -123,7 +136,7 @@ class CanvasEventFilter(QObject):
                 event_name = self._get_event_name(event_type)
                 print(f"[ROAA-Approach3] Event #{self.event_count}: type={event_type} ({event_name})")
                 import sys
-                sys.stdout.flush()
+                safe_flush()
             
             # Log event count periodically
             current_time = time.time()
@@ -131,7 +144,7 @@ class CanvasEventFilter(QObject):
                 self.last_log_time = current_time
                 print(f"[ROAA-Approach3] Received {self.event_count} events total")
                 import sys
-                sys.stdout.flush()
+                safe_flush()
             
             # Detect stroke beginning (try various event types)
             if event_type in (QEvent.MouseButtonPress, QEvent.TabletPress, QEvent.MouseMove):
@@ -153,7 +166,7 @@ class CanvasEventFilter(QObject):
                 print(f"[EventFilter] ERROR: {e}")
                 print(f"Traceback: {traceback.format_exc()}")
                 import sys
-                sys.stdout.flush()
+                safe_flush()
         
         # Don't block the event - let Krita process it normally
         return False
@@ -1882,7 +1895,7 @@ class EventCapture:
             
             full_message = f"EventCapture: {message}"
             print(full_message)
-            sys.stdout.flush()
+            safe_flush()
             
             # Also write to debug file
             try:

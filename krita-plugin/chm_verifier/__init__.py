@@ -16,10 +16,16 @@ if os.path.exists(vendor_dir) and vendor_dir not in sys.path:
 # Log to both stdout AND a debug file for troubleshooting
 def debug_log(message):
     """Write to both console and debug file"""
-    print(message)
-    sys.stdout.flush()  # Force flush to console
+    # Only print to stdout if it exists (Windows GUI apps may not have stdout)
+    if sys.stdout is not None:
+        print(message)
+        try:
+            sys.stdout.flush()  # Force flush to console
+        except (AttributeError, ValueError):
+            # Windows GUI mode: stdout may be None or closed
+            pass
     
-    # Also write to debug file
+    # Also write to debug file (more reliable cross-platform)
     try:
         import os
         log_dir = os.path.expanduser("~/.local/share/chm")
@@ -32,7 +38,9 @@ def debug_log(message):
             f.write(f"[{timestamp}] {message}\n")
             f.flush()
     except Exception as e:
-        print(f"CHM: Could not write to log file: {e}")
+        # Can't log to stdout if it doesn't exist, fail silently
+        if sys.stdout is not None:
+            print(f"CHM: Could not write to log file: {e}")
 
 debug_log("=" * 60)
 debug_log("CHM: __init__.py starting to load")

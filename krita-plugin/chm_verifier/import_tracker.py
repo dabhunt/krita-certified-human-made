@@ -15,6 +15,19 @@ more straightforward approach.
 from typing import Optional
 from PyQt5.QtGui import QImage
 
+# Import safe_flush utility for Windows compatibility
+try:
+    from .logging_util import safe_flush
+except ImportError:
+    # Fallback if logging_util not available
+    import sys
+    def safe_flush():
+        if sys.stdout is not None:
+            try:
+                safe_flush()
+            except (AttributeError, ValueError):
+                pass
+
 
 DEBUG_LOG = True
 
@@ -116,7 +129,7 @@ class ImportTracker:
             
             full_message = f"ImportTracker: {message}"
             print(full_message)
-            sys.stdout.flush()
+            safe_flush()
             
             # Also write to debug file
             try:

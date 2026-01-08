@@ -29,6 +29,18 @@ from .path_preferences import PathPreferences
 from .session_storage import SessionStorage
 from .chm_docker import CHMDockerWidget
 
+# Import safe_flush utility for Windows compatibility
+try:
+    from .logging_util import safe_flush
+except ImportError:
+    # Fallback if logging_util not available
+    def safe_flush():
+        if sys.stdout is not None:
+            try:
+                safe_flush()
+            except (AttributeError, ValueError):
+                pass
+
 
 class CHMExtension(Extension):
     """Main extension class for CHM plugin"""
@@ -1118,7 +1130,7 @@ class CHMExtension(Extension):
         import sys
         full_message = f"CHM: {message}"
         print(full_message)
-        sys.stdout.flush()
+        safe_flush()
         
         # Also write to debug file
         try:

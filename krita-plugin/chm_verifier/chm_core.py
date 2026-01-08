@@ -15,6 +15,19 @@ import uuid
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 
+# Import safe_flush utility for Windows compatibility
+try:
+    from .logging_util import safe_flush
+except ImportError:
+    # Fallback if logging_util not available
+    import sys
+    def safe_flush():
+        if sys.stdout is not None:
+            try:
+                safe_flush()
+            except (AttributeError, ValueError):
+                pass
+
 # Global signing key (set by plugin on startup)
 _SIGNING_KEY = None
 
@@ -31,13 +44,14 @@ def set_signing_key(key_b64: str):
     """
     global _SIGNING_KEY
     import base64
+    import sys
     
     # Decode from base64
     _SIGNING_KEY = base64.b64decode(key_b64)
     
-    print(f"[SIGNING-KEY] ✓ Signing key loaded ({len(_SIGNING_KEY)} bytes)")
-    import sys
-    sys.stdout.flush()
+    if sys.stdout is not None:
+        print(f"[SIGNING-KEY] ✓ Signing key loaded ({len(_SIGNING_KEY)} bytes)")
+    safe_flush()
 
 
 def _compute_session_signature(proof_data: Dict[str, Any], signature_version: str = "v1") -> Optional[str]:
@@ -59,7 +73,7 @@ def _compute_session_signature(proof_data: Dict[str, Any], signature_version: st
     if not _SIGNING_KEY:
         print("[SIGNATURE] ⚠️ No signing key set, cannot compute signature")
         import sys
-        sys.stdout.flush()
+        safe_flush()
         return None
     
     # Extract critical data for signing
@@ -96,8 +110,7 @@ def _compute_session_signature(proof_data: Dict[str, Any], signature_version: st
     print(f"[SIGNATURE] ✓ Computed signature: {signature[:16]}...{signature[-16:]}")
     print(f"[SIGNATURE]   Signed data size: {len(critical_json)} bytes")
     print(f"[SIGNATURE]   Signature version: {signature_version}")
-    import sys
-    sys.stdout.flush()
+    safe_flush()
     
     return signature
 
@@ -120,14 +133,14 @@ def _verify_session_signature(proof_data: Dict[str, Any]) -> bool:
     if not _SIGNING_KEY:
         print("[VERIFY] ⚠️ No signing key set, cannot verify signature")
         import sys
-        sys.stdout.flush()
+        safe_flush()
         return False
     
     # Check if proof has signature
     if "signature" not in proof_data:
         print("[VERIFY] ✗ Proof has no signature field")
         import sys
-        sys.stdout.flush()
+        safe_flush()
         return False
     
     stored_signature = proof_data["signature"]
@@ -139,7 +152,7 @@ def _verify_session_signature(proof_data: Dict[str, Any]) -> bool:
     if not computed_signature:
         print("[VERIFY] ✗ Failed to compute signature for verification")
         import sys
-        sys.stdout.flush()
+        safe_flush()
         return False
     
     # Compare signatures (constant-time comparison to prevent timing attacks)
@@ -152,8 +165,7 @@ def _verify_session_signature(proof_data: Dict[str, Any]) -> bool:
         print(f"[VERIFY]   Expected: {computed_signature[:32]}...")
         print(f"[VERIFY]   Got:      {stored_signature[:32]}...")
     
-    import sys
-    sys.stdout.flush()
+    safe_flush()
     
     return is_valid
 
@@ -175,7 +187,7 @@ class CHMProof:
         print(f"[FLOW-4a] 📝 CHMProof created with {len(proof_data)} keys")
         print(f"[FLOW-4a] Proof keys: {list(proof_data.keys())}")
         import sys
-        sys.stdout.flush()
+        safe_flush()
     
     def export_json(self) -> str:
         """
@@ -187,7 +199,7 @@ class CHMProof:
         json_str = json.dumps(self.data, indent=2)
         print(f"[FLOW-4b] 📤 Proof exported as JSON ({len(json_str)} bytes)")
         import sys
-        sys.stdout.flush()
+        safe_flush()
         return json_str
     
     def to_dict(self) -> Dict[str, Any]:
@@ -486,7 +498,7 @@ class CHMSession:
         print(f"[FLOW-3a] 🔐 Finalizing session {self.session_id} with {len(self.events)} events")
         import sys
         import os
-        sys.stdout.flush()
+        safe_flush()
         
         self.finalized = True
         end_time = datetime.utcnow()
@@ -501,21 +513,21 @@ class CHMSession:
         undo_count = sum(1 for e in self.events if e.get("type") == "undo_redo" and e.get("action") == "undo")
         
         print(f"[FLOW-3b] 📊 Event summary: {stroke_count} strokes, {layer_count} layers, {import_count} imports, {undo_count} undos")
-        sys.stdout.flush()
+        safe_flush()
         
         # Generate event hash
         events_json = json.dumps(self.events, sort_keys=True)
         events_hash = hashlib.sha256(events_json.encode()).hexdigest()
         
         print(f"[FLOW-3c] 🔑 Events hash: {events_hash[:16]}...")
-        sys.stdout.flush()
+        safe_flush()
         
         # File hash computation if artwork path provided
         file_hash = None
         
         if artwork_path and os.path.exists(artwork_path):
             print(f"[FLOW-3c-HASH] 🖼️ Computing file hash for: {artwork_path}")
-            sys.stdout.flush()
+            safe_flush()
             
             try:
                 # File hash (SHA-256 of exact bytes) - sufficient for duplicate detection
@@ -523,21 +535,21 @@ class CHMSession:
                     artwork_bytes = f.read()
                     file_hash = hashlib.sha256(artwork_bytes).hexdigest()
                     print(f"[FLOW-3c-HASH] ✓ File hash (SHA-256): {file_hash[:16]}...")
-                    sys.stdout.flush()
+                    safe_flush()
                     
             except Exception as e:
                 print(f"[FLOW-3c-HASH] ⚠️ Failed to compute file hash: {e}")
-                sys.stdout.flush()
+                safe_flush()
         else:
             print(f"[FLOW-3c-DUAL] ℹ️ No artwork path provided, using placeholder hashes")
-            sys.stdout.flush()
+            safe_flush()
         
         # BUG#005 FIX: Pass doc_key instead of doc_id
         # Classify session (pass import tracker for MixedMedia check)
         classification = self._classify(doc=doc, doc_key=doc_key, import_tracker=import_tracker)
         
         print(f"[FLOW-3d] 🏷️ Classification: {classification}")
-        sys.stdout.flush()
+        safe_flush()
         
         # Create proof summary
         proof_data = {
@@ -566,7 +578,7 @@ class CHMSession:
         
         # TAMPER RESISTANCE: Compute HMAC signature of critical proof data
         print(f"[FLOW-3f] 🔐 Computing HMAC signature for tamper resistance...")
-        sys.stdout.flush()
+        safe_flush()
         
         signature_version = "v1"  # For future key rotation
         signature = _compute_session_signature(proof_data, signature_version)
@@ -577,10 +589,10 @@ class CHMSession:
             print(f"[FLOW-3f] ✓ Signature added to proof")
         else:
             print(f"[FLOW-3f] ⚠️ No signature (signing key not set)")
-        sys.stdout.flush()
+        safe_flush()
         
         print(f"[FLOW-3e] ✅ Proof data created, wrapping in CHMProof object")
-        sys.stdout.flush()
+        safe_flush()
         
         return CHMProof(proof_data)
     

@@ -14,6 +14,22 @@ except ImportError:
     DEBUG_LOG_FILE = os.path.join(LOGS_DIR, "plugin_debug.log")
 
 
+def safe_flush():
+    """
+    Safely flush stdout, handling Windows GUI mode where stdout may be None.
+    
+    On Windows, Krita runs as a GUI application without a console, so sys.stdout
+    is None. This function guards against AttributeError in that case.
+    """
+    if sys.stdout is not None:
+        try:
+            sys.stdout.flush()
+        except (AttributeError, ValueError):
+            # AttributeError: stdout is None (Windows GUI)
+            # ValueError: I/O operation on closed file
+            pass
+
+
 def log_message(message, prefix="CHM", level="INFO", force_console=False):
     """
     Log a message with configurable console/file output.
@@ -29,8 +45,9 @@ def log_message(message, prefix="CHM", level="INFO", force_console=False):
     
     # Console output (only in debug mode unless forced or it's an error)
     if LOG_TO_CONSOLE or force_console or level in ("ERROR", "WARNING"):
-        print(full_message)
-        sys.stdout.flush()
+        if sys.stdout is not None:
+            print(full_message)
+            safe_flush()
     
     # File output (always enabled for troubleshooting)
     if LOG_TO_FILE:

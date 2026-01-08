@@ -9,6 +9,19 @@ from .chm_loader import chm
 import json
 import uuid
 
+# Import safe_flush utility for Windows compatibility
+try:
+    from .logging_util import safe_flush
+except ImportError:
+    # Fallback if logging_util not available
+    import sys
+    def safe_flush():
+        if sys.stdout is not None:
+            try:
+                safe_flush()
+            except (AttributeError, ValueError):
+                pass
+
 
 class CHMSessionManager:
     """Manages CHM sessions for multiple documents"""
@@ -484,5 +497,5 @@ class CHMSessionManager:
         if self.DEBUG_LOG:
             import sys
             print(f"CHMSessionManager: {message}")
-            sys.stdout.flush()
+            safe_flush()
 

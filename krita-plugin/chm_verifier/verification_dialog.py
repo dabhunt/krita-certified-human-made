@@ -12,6 +12,19 @@ from PyQt5.QtCore import Qt
 import json
 from .path_preferences import PathPreferences
 
+# Import safe_flush utility for Windows compatibility
+try:
+    from .logging_util import safe_flush
+except ImportError:
+    # Fallback if logging_util not available
+    import sys
+    def safe_flush():
+        if sys.stdout is not None:
+            try:
+                safe_flush()
+            except (AttributeError, ValueError):
+                pass
+
 
 class VerificationDialog(QDialog):
     """Dialog for viewing and exporting CHM proofs"""
@@ -39,7 +52,7 @@ class VerificationDialog(QDialog):
             self.proof_data = None
         
         import sys
-        sys.stdout.flush()
+        safe_flush()
         
         self.setWindowTitle("CHM Verification Proof")
         self.setMinimumSize(600, 500)
@@ -130,13 +143,13 @@ class VerificationDialog(QDialog):
         import sys
         print(f"[FLOW-5] 📊 Displaying proof in dialog")
         print(f"[FLOW-5] Proof data keys: {list(proof_data.keys())}")
-        sys.stdout.flush()
+        safe_flush()
         
         # Classification
         classification = proof_data.get("classification", "Unknown")
         
         print(f"[FLOW-6] Classification: {classification}")
-        sys.stdout.flush()
+        safe_flush()
         
         # Format classification display name
         classification_display = classification
@@ -150,7 +163,7 @@ class VerificationDialog(QDialog):
         # Session info
         session_id = proof_data.get("session_id", "N/A")
         print(f"[FLOW-6] Session ID: {session_id}")
-        sys.stdout.flush()
+        safe_flush()
         
         self.session_id_label.setText(session_id[:16] + "..." if len(session_id) > 16 else session_id)
         
@@ -162,7 +175,7 @@ class VerificationDialog(QDialog):
         tracing_percentage = proof_data.get("tracing_percentage", 0.0)
         
         print(f"[FLOW-6] Events: {total_events}, Strokes: {stroke_count}, Duration: {duration}s, Imports: {import_count}")
-        sys.stdout.flush()
+        safe_flush()
         
         self.duration_label.setText(f"{duration} seconds ({duration // 60}m {duration % 60}s)")
         self.events_label.setText(str(total_events))
@@ -180,7 +193,7 @@ class VerificationDialog(QDialog):
         # Full JSON
         json_str = json.dumps(proof_data, indent=2)
         print(f"[FLOW-7] ✓ JSON exported ({len(json_str)} bytes)")
-        sys.stdout.flush()
+        safe_flush()
         
         self.proof_text.setPlainText(json_str)
     

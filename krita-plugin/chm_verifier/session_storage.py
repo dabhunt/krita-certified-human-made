@@ -10,6 +10,19 @@ import json
 import hashlib
 from datetime import datetime
 
+# Import safe_flush utility for Windows compatibility
+try:
+    from .logging_util import safe_flush
+except ImportError:
+    # Fallback if logging_util not available
+    import sys
+    def safe_flush():
+        if sys.stdout is not None:
+            try:
+                safe_flush()
+            except (AttributeError, ValueError):
+                pass
+
 
 class SessionStorage:
     """
@@ -287,7 +300,7 @@ class SessionStorage:
             
             full_message = f"SessionStorage: {message}"
             print(full_message)
-            sys.stdout.flush()
+            safe_flush()
             
             # Also write to debug file
             try:
