@@ -69,6 +69,19 @@ def save_key_to_config(key_b64, config_path=None):
 
 def main():
     """Main function"""
+    # Check for auto-generate flag (used by build scripts)
+    if "--auto-generate" in sys.argv:
+        key_b64 = generate_signing_key(32)
+        try:
+            saved_path = save_key_to_config(key_b64)
+            print(f"✓ Auto-generated signing key: {saved_path}")
+            print(f"✓ Key fingerprint: {key_b64[:8]}...{key_b64[-8:]}")
+            return
+        except Exception as e:
+            print(f"✗ Error auto-generating key: {e}")
+            sys.exit(1)
+    
+    # Interactive mode
     print("=" * 70)
     print("CHM Plugin - Secret Signing Key Generator")
     print("=" * 70)

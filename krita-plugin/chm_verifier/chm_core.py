@@ -4,12 +4,13 @@ CHM Core - Python Implementation
 Pure Python implementation of CHM core functionality.
 Uses standard Python libraries for cryptography and session management.
 
-This is the primary implementation for MVP. Future versions may add
-Rust optimization for performance-critical operations.
+SECURITY (BUG-015 FIX):
+- Server-side ED25519 signing (private key never exposed)
+- Server-side GitHub timestamping (GitHub token never exposed)
+- Public key embedded for verification (safe to distribute)
 """
 
 import hashlib
-import hmac
 import json
 import uuid
 from datetime import datetime
@@ -24,103 +25,108 @@ except ImportError:
     def safe_flush():
         if sys.stdout is not None:
             try:
-                safe_flush()
+                sys.stdout.flush()
             except (AttributeError, ValueError):
                 pass
 
-# Global signing key (set by plugin on startup)
-_SIGNING_KEY = None
+# =============================================================================
+# ED25519 PUBLIC KEY (SAFE TO EMBED - USED FOR VERIFICATION ONLY)
+# =============================================================================
+# This public key verifies proofs signed by the server's private key.
+# It's safe to distribute publicly - cannot be used to forge proofs.
+ED25519_PUBLIC_KEY_PEM = """-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAR9iDWLgtMcNYi0eWV9VKzgiKvXuVs1biEdwYxjnhIqo=
+-----END PUBLIC KEY-----"""
+
+# Global API client reference (set by plugin on startup)
+_API_CLIENT = None
 
 
-def set_signing_key(key_b64: str):
+def set_api_client(api_client):
     """
-    Set the global signing key for HMAC signatures.
+    Set the global API client for server-side signing.
     
-    This should be called once by the plugin during setup.
-    The key is used to sign session proofs for tamper resistance.
+    SECURITY (BUG-015): Replaced set_signing_key() with set_api_client().
+    Plugin no longer handles signing keys - all signing happens server-side.
     
     Args:
-        key_b64: Base64-encoded signing key
+        api_client: CHMApiClient instance for server communication
     """
-    global _SIGNING_KEY
-    import base64
+    global _API_CLIENT
     import sys
     
-    # Decode from base64
-    _SIGNING_KEY = base64.b64decode(key_b64)
+    _API_CLIENT = api_client
     
     if sys.stdout is not None:
-        print(f"[SIGNING-KEY] ✓ Signing key loaded ({len(_SIGNING_KEY)} bytes)")
+        print(f"[API-CLIENT] ✓ API client registered for server-side signing")
     safe_flush()
 
 
-def _compute_session_signature(proof_data: Dict[str, Any], signature_version: str = "v1") -> Optional[str]:
+def _compute_session_signature_via_server(proof_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """
-    Compute HMAC-SHA256 signature of critical proof data.
+    Request server-side ED25519 signature + GitHub timestamp (COMBINED API CALL).
     
-    This creates a tamper-proof signature that covers all critical fields.
-    Any modification to signed data will break the signature.
+    SECURITY (BUG-015 FIX):
+    - Private key stays on server (never exposed to plugin)
+    - GitHub token stays on server (never exposed to plugin)
+    - Returns ED25519 signature + GitHub gist URL
+    - Users cannot forge proofs (no access to private key)
     
     Args:
         proof_data: Proof data dictionary
-        signature_version: Signature version (for future key rotation)
         
     Returns:
-        Hex-encoded HMAC signature or None if signing key not set
+        dict: {
+            'signature': str - ED25519 signature (base64),
+            'signature_version': str - 'ed25519-v1',
+            'github': dict or None - GitHub timestamp info
+        } or None if API call failed
     """
-    global _SIGNING_KEY
+    global _API_CLIENT
     
-    if not _SIGNING_KEY:
-        print("[SIGNATURE] ⚠️ No signing key set, cannot compute signature")
+    if not _API_CLIENT:
+        print("[SIGNATURE] ⚠️  No API client set, cannot sign via server")
         import sys
         safe_flush()
         return None
     
-    # Extract critical data for signing
-    # These fields are the core of the proof and must not be tampered with
-    critical_data = {
-        "version": proof_data.get("version"),
-        "session_id": proof_data.get("session_id"),
-        "events_hash": proof_data.get("events_hash"),
-        "file_hash": proof_data.get("file_hash"),
-        "classification": proof_data.get("classification"),
-        "event_summary": {
-            "total_events": proof_data.get("event_summary", {}).get("total_events"),
-            "stroke_count": proof_data.get("event_summary", {}).get("stroke_count"),
-            "layer_count": proof_data.get("event_summary", {}).get("layer_count"),
-            "import_count": proof_data.get("event_summary", {}).get("import_count")
-        },
-        "metadata": {
-            "ai_tools_used": proof_data.get("metadata", {}).get("ai_tools_used"),
-            "ai_tools_list": proof_data.get("metadata", {}).get("ai_tools_list")
-        },
-        "signature_version": signature_version
-    }
-    
-    # Serialize to JSON (deterministic order)
-    critical_json = json.dumps(critical_data, sort_keys=True, separators=(',', ':'))
-    
-    # Compute HMAC-SHA256
-    signature = hmac.new(
-        _SIGNING_KEY,
-        critical_json.encode('utf-8'),
-        hashlib.sha256
-    ).hexdigest()
-    
-    print(f"[SIGNATURE] ✓ Computed signature: {signature[:16]}...{signature[-16:]}")
-    print(f"[SIGNATURE]   Signed data size: {len(critical_json)} bytes")
-    print(f"[SIGNATURE]   Signature version: {signature_version}")
+    print(f"[SIGNATURE] Requesting server-side signing + timestamping...")
     safe_flush()
     
-    return signature
+    # Call server API (handles both signing AND GitHub timestamp)
+    result = _API_CLIENT.sign_and_timestamp(proof_data)
+    
+    if result.get('error'):
+        print(f"[SIGNATURE] ✗ Server signing failed: {result['error']}")
+        safe_flush()
+        return None
+    
+    if result.get('signature'):
+        print(f"[SIGNATURE] ✓ Server signed proof: {result['signature'][:20]}...")
+        print(f"[SIGNATURE]   Signature version: {result.get('signature_version', 'unknown')}")
+        
+        if result.get('github'):
+            print(f"[SIGNATURE] ✓ GitHub timestamp: {result['github']['url']}")
+        else:
+            print(f"[SIGNATURE] ⚠️  No GitHub timestamp (non-fatal)")
+        
+        safe_flush()
+        return result
+    
+    print(f"[SIGNATURE] ✗ No signature in server response")
+    safe_flush()
+    return None
 
 
 def _verify_session_signature(proof_data: Dict[str, Any]) -> bool:
     """
-    Verify HMAC signature of proof data.
+    Verify ED25519 signature of proof data using public key.
     
-    Recomputes the signature and compares to stored value.
-    Returns True only if signatures match (proof is untampered).
+    SECURITY (BUG-015 FIX):
+    - Uses ED25519 asymmetric verification
+    - Public key embedded in code (safe - cannot forge)
+    - Works with server-signed proofs
+    - Pure Python (no Rust dependency)
     
     Args:
         proof_data: Proof data dictionary with 'signature' field
@@ -128,46 +134,92 @@ def _verify_session_signature(proof_data: Dict[str, Any]) -> bool:
     Returns:
         True if signature is valid, False otherwise
     """
-    global _SIGNING_KEY
-    
-    if not _SIGNING_KEY:
-        print("[VERIFY] ⚠️ No signing key set, cannot verify signature")
-        import sys
-        safe_flush()
-        return False
-    
     # Check if proof has signature
     if "signature" not in proof_data:
         print("[VERIFY] ✗ Proof has no signature field")
-        import sys
         safe_flush()
         return False
     
     stored_signature = proof_data["signature"]
     signature_version = proof_data.get("signature_version", "v1")
     
-    # Recompute signature
-    computed_signature = _compute_session_signature(proof_data, signature_version)
-    
-    if not computed_signature:
-        print("[VERIFY] ✗ Failed to compute signature for verification")
-        import sys
+    # Handle different signature versions
+    if signature_version == "ed25519-v1":
+        # New secure ED25519 signatures
+        return _verify_ed25519_signature(proof_data, stored_signature)
+    elif signature_version in ["v1", "hmac-v1"]:
+        # Old HMAC signatures (DEPRECATED - insecure!)
+        print("[VERIFY] ⚠️  WARNING: Proof uses deprecated HMAC signature (insecure)")
+        print("[VERIFY] ⚠️  HMAC proofs can be forged - do not trust for authenticity")
+        print("[VERIFY] ⚠️  Please regenerate proof with server-side ED25519 signing")
+        safe_flush()
+        # Return False - we don't support HMAC verification anymore (insecure)
+        return False
+    else:
+        print(f"[VERIFY] ✗ Unknown signature version: {signature_version}")
         safe_flush()
         return False
+
+
+def _verify_ed25519_signature(proof_data: Dict[str, Any], signature_b64: str) -> bool:
+    """
+    Verify ED25519 signature using embedded public key.
     
-    # Compare signatures (constant-time comparison to prevent timing attacks)
-    is_valid = hmac.compare_digest(stored_signature, computed_signature)
-    
-    if is_valid:
-        print(f"[VERIFY] ✅ Signature is VALID - proof is untampered")
-    else:
-        print(f"[VERIFY] ❌ Signature is INVALID - proof has been tampered!")
-        print(f"[VERIFY]   Expected: {computed_signature[:32]}...")
-        print(f"[VERIFY]   Got:      {stored_signature[:32]}...")
-    
-    safe_flush()
-    
-    return is_valid
+    Args:
+        proof_data: Proof data dictionary
+        signature_b64: Base64-encoded ED25519 signature
+        
+    Returns:
+        bool: True if signature valid
+    """
+    try:
+        # Import pure Python ED25519 verification
+        from . import ed25519_pure
+        
+        # Prepare canonical message (same as server)
+        canonical_data = {
+            "version": proof_data.get("version"),
+            "session_id": proof_data.get("session_id"),
+            "events_hash": proof_data.get("events_hash"),
+            "file_hash": proof_data.get("file_hash"),
+            "classification": proof_data.get("classification"),
+            "event_summary": {
+                "total_events": proof_data.get("event_summary", {}).get("total_events"),
+                "stroke_count": proof_data.get("event_summary", {}).get("stroke_count"),
+                "layer_count": proof_data.get("event_summary", {}).get("layer_count"),
+                "import_count": proof_data.get("event_summary", {}).get("import_count")
+            },
+            "metadata": {
+                "ai_tools_used": proof_data.get("metadata", {}).get("ai_tools_used"),
+                "ai_tools_list": proof_data.get("metadata", {}).get("ai_tools_list")
+            },
+            "signature_version": "ed25519-v1"
+        }
+        
+        # Serialize to JSON (deterministic, same as server)
+        message = json.dumps(canonical_data, sort_keys=True, separators=(',', ':')).encode('utf-8')
+        
+        print(f"[VERIFY] Verifying ED25519 signature...")
+        print(f"[VERIFY]   Message size: {len(message)} bytes")
+        print(f"[VERIFY]   Signature: {signature_b64[:20]}...")
+        
+        # Verify with public key (pure Python)
+        is_valid = ed25519_pure.verify_pem(message, signature_b64, ED25519_PUBLIC_KEY_PEM)
+        
+        if is_valid:
+            print(f"[VERIFY] ✅ ED25519 signature VALID - proof is authentic")
+        else:
+            print(f"[VERIFY] ❌ ED25519 signature INVALID - proof tampered or forged")
+        
+        safe_flush()
+        return is_valid
+        
+    except Exception as e:
+        print(f"[VERIFY] ✗ ED25519 verification error: {e}")
+        import traceback
+        print(f"[VERIFY] Traceback:\n{traceback.format_exc()}")
+        safe_flush()
+        return False
 
 
 class CHMProof:
@@ -576,22 +628,43 @@ class CHMSession:
             "metadata": self.metadata
         }
         
-        # TAMPER RESISTANCE: Compute HMAC signature of critical proof data
-        print(f"[FLOW-3f] 🔐 Computing HMAC signature for tamper resistance...")
+        # TAMPER RESISTANCE: Server-side ED25519 signature + GitHub timestamp
+        print(f"[FLOW-3f] 🔐 Requesting server-side ED25519 signature + GitHub timestamp...")
         safe_flush()
         
-        signature_version = "v1"  # For future key rotation
-        signature = _compute_session_signature(proof_data, signature_version)
+        # BUG-015 FIX: Use server-side signing (private key never exposed)
+        # This also creates GitHub timestamp in same API call (DRY!)
+        sign_result = _compute_session_signature_via_server(proof_data)
         
-        if signature:
-            proof_data["signature"] = signature
-            proof_data["signature_version"] = signature_version
-            print(f"[FLOW-3f] ✓ Signature added to proof")
+        if sign_result and sign_result.get('signature'):
+            # Add signature to proof data
+            proof_data["signature"] = sign_result['signature']
+            proof_data["signature_version"] = sign_result.get('signature_version', 'ed25519-v1')
+            print(f"[FLOW-3f] ✓ Server signed proof with ED25519")
+            safe_flush()
+            
+            # GitHub timestamp included in server response (if successful)
+            if sign_result.get('github'):
+                github_timestamp = sign_result['github']
+                print(f"[FLOW-3f] ✓ GitHub timestamp included: {github_timestamp.get('url')}")
+                safe_flush()
+                
+                # Add timestamps section to proof (includes GitHub + local will be added later)
+                proof_data["timestamps"] = {
+                    "github": github_timestamp,
+                    "chm_log": None  # Will be added by timestamp_service after return
+                }
+            else:
+                print(f"[FLOW-3f] ⚠️  No GitHub timestamp (server-side error, non-fatal)")
+                safe_flush()
+                
         else:
-            print(f"[FLOW-3f] ⚠️ No signature (signing key not set)")
-        safe_flush()
+            print(f"[FLOW-3f] ❌ Server signing failed!")
+            print(f"[FLOW-3f] ❌ Cannot generate proof without signature")
+            safe_flush()
+            raise RuntimeError("Server-side signing failed - proof cannot be created without valid signature")
         
-        print(f"[FLOW-3e] ✅ Proof data created, wrapping in CHMProof object")
+        print(f"[FLOW-3e] ✅ Proof data created (signed + timestamped), wrapping in CHMProof object")
         safe_flush()
         
         return CHMProof(proof_data)

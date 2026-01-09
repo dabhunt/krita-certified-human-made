@@ -4,7 +4,7 @@
 
 This is the first production release of the CHM Krita plugin: a privacy-first verification system that captures your creative process and generates cryptographic proof of human authorship.
 
-## ✨ What's New in v1.0.0
+## v1.0.0
 
 - ✅ **Production-ready plugin** for Krita 5.2+
 - ✅ **Automatic session tracking** as you create

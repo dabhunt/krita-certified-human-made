@@ -109,13 +109,18 @@ class TripleTimestampService:
             if self.github_token:
                 self._log(f"[TIMESTAMP-DEBUG] Token length: {len(self.github_token)}")
             try:
+                self._log(f"[TIMESTAMP-DEBUG] Calling _submit_to_github()...")
                 results['github'] = self._submit_to_github(proof_hash, proof_dict)
+                self._log(f"[TIMESTAMP-DEBUG] _submit_to_github() returned: {type(results['github'])}")
+                self._log(f"[TIMESTAMP-DEBUG] GitHub result: {results['github']}")
                 results['success_count'] += 1
                 self._log(f"[TIMESTAMP] ✓ GitHub Gist: {results['github']['url']}")
             except Exception as e:
-                error_msg = f"GitHub submission failed: {e}"
+                error_msg = f"GitHub submission failed: {str(e)}"
                 results['errors'].append(error_msg)
                 self._log(f"[TIMESTAMP] ✗ {error_msg}")
+                self._log(f"[TIMESTAMP-DEBUG] Error type: {type(e).__name__}")
+                self._log(f"[TIMESTAMP-DEBUG] Error str: {str(e)}")
                 # Add full traceback for debugging
                 import traceback
                 self._log(f"[TIMESTAMP-DEBUG] GitHub error traceback:\n{traceback.format_exc()}")
@@ -182,7 +187,7 @@ class TripleTimestampService:
             self._log(f"[GITHUB-SUBMIT] ✗ Failed to import urllib: {e}")
             raise
         
-        # Create SSL context (for macOS certificate handling)
+        # Create SSL context (for cross-platform certificate handling)
         try:
             self._log("[GITHUB-SUBMIT] Creating SSL context...")
             
@@ -199,11 +204,20 @@ class TripleTimestampService:
             
             # DIAGNOSTIC: Check system SSL paths
             import os
+            import platform
+            system_info = platform.system()
+            self._log(f"[SSL-DIAG] Operating system: {system_info}")
+            
             system_cert_paths = [
                 '/etc/ssl/cert.pem',  # macOS
                 '/etc/ssl/certs/ca-certificates.crt',  # Linux
                 '/etc/pki/tls/certs/ca-bundle.crt',  # RedHat/CentOS
             ]
+            
+            # Windows certificate paths (system cert store)
+            if system_info == 'Windows':
+                self._log("[SSL-DIAG] Windows detected - will use system cert store")
+            
             self._log("[SSL-DIAG] Checking system certificate paths:")
             for cert_path in system_cert_paths:
                 exists = os.path.isfile(cert_path)
@@ -211,30 +225,51 @@ class TripleTimestampService:
             
             # Try multiple SSL context creation strategies
             ssl_context = None
+            ssl_strategy_used = None
             
-            # Strategy 1: Use certifi if available
-            if certifi_available and certifi_path:
-                self._log("[SSL-STRATEGY] Trying certifi package...")
-                ssl_context = ssl.create_default_context(cafile=certifi_path)
-                self._log("[SSL-STRATEGY] ✓ SSL context created with certifi")
+            # Strategy 1: Use certifi if available (best for Windows)
+            if certifi_available and certifi_path and os.path.isfile(certifi_path):
+                self._log("[SSL-STRATEGY-1] Trying certifi package...")
+                try:
+                    ssl_context = ssl.create_default_context(cafile=certifi_path)
+                    ssl_strategy_used = "certifi"
+                    self._log("[SSL-STRATEGY-1] ✓ SSL context created with certifi")
+                except Exception as e:
+                    self._log(f"[SSL-STRATEGY-1] ✗ certifi failed: {e}")
             
-            # Strategy 2: Use default context (system certs)
+            # Strategy 2: Use default context (system certs) - works on macOS/Linux
             if not ssl_context:
-                self._log("[SSL-STRATEGY] Trying default system context...")
+                self._log("[SSL-STRATEGY-2] Trying default system context...")
                 try:
                     ssl_context = ssl.create_default_context()
-                    self._log("[SSL-STRATEGY] ✓ SSL context created with system certs")
+                    ssl_strategy_used = "system_default"
+                    self._log("[SSL-STRATEGY-2] ✓ SSL context created with system certs")
                 except Exception as e:
-                    self._log(f"[SSL-STRATEGY] ✗ Default context failed: {e}")
+                    self._log(f"[SSL-STRATEGY-2] ✗ Default context failed: {e}")
             
-            # Strategy 3: Unverified context (FALLBACK - less secure but functional)
+            # Strategy 3: Windows-specific - load system certs manually
+            if not ssl_context and system_info == 'Windows':
+                self._log("[SSL-STRATEGY-3] Trying Windows cert store import...")
+                try:
+                    ssl_context = ssl.create_default_context()
+                    # On Windows, Python should automatically use the system cert store
+                    # But we'll explicitly set minimum TLS version for compatibility
+                    ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
+                    ssl_strategy_used = "windows_certstore"
+                    self._log("[SSL-STRATEGY-3] ✓ SSL context with Windows cert store")
+                except Exception as e:
+                    self._log(f"[SSL-STRATEGY-3] ✗ Windows cert store failed: {e}")
+            
+            # Strategy 4: Unverified context (FALLBACK - less secure but functional)
             if not ssl_context:
-                self._log("[SSL-STRATEGY] ⚠️  FALLBACK: Using unverified SSL context")
-                self._log("[SSL-STRATEGY] ⚠️  This is less secure but allows functionality")
+                self._log("[SSL-STRATEGY-4] ⚠️  FALLBACK: Using unverified SSL context")
+                self._log("[SSL-STRATEGY-4] ⚠️  This disables certificate verification")
+                self._log("[SSL-STRATEGY-4] ⚠️  Connection is encrypted but not authenticated")
                 ssl_context = ssl._create_unverified_context()
-                self._log("[SSL-STRATEGY] ✓ Unverified SSL context created")
+                ssl_strategy_used = "unverified"
+                self._log("[SSL-STRATEGY-4] ✓ Unverified SSL context created")
             
-            self._log("[GITHUB-SUBMIT] ✓ SSL context created successfully")
+            self._log(f"[GITHUB-SUBMIT] ✓ SSL context created successfully (strategy: {ssl_strategy_used})")
             
         except Exception as e:
             self._log(f"[GITHUB-SUBMIT] ✗ Failed to create SSL context: {e}")
@@ -361,13 +396,34 @@ class TripleTimestampService:
         except urllib.error.HTTPError as e:
             error_body = e.read().decode('utf-8') if e.fp else 'No error body'
             self._log(f"[GITHUB] HTTP Error {e.code}: {error_body}")
-            raise Exception(f"GitHub API error {e.code}: {error_body}")
+            # More descriptive error messages
+            if e.code == 401:
+                raise Exception(f"GitHub authentication failed (code {e.code}). Check API token.")
+            elif e.code == 403:
+                raise Exception(f"GitHub rate limit or permissions issue (code {e.code})")
+            elif e.code == 404:
+                raise Exception(f"GitHub API endpoint not found (code {e.code})")
+            else:
+                raise Exception(f"GitHub API HTTP error {e.code}: {error_body[:100]}")
         except urllib.error.URLError as e:
             self._log(f"[GITHUB] URL Error: {e.reason}")
-            raise Exception(f"GitHub connection failed: {e.reason}")
+            # More descriptive error for common SSL/network issues
+            error_str = str(e.reason)
+            if 'certificate' in error_str.lower() or 'ssl' in error_str.lower():
+                raise Exception(f"SSL certificate error: {error_str}. Try installing certifi package.")
+            elif 'timed out' in error_str.lower() or 'timeout' in error_str.lower():
+                raise Exception(f"Network timeout connecting to GitHub: {error_str}")
+            else:
+                raise Exception(f"GitHub connection failed: {error_str}")
+        except ssl.SSLError as e:
+            self._log(f"[GITHUB] SSL Error: {e}")
+            raise Exception(f"SSL/TLS error: {str(e)}. Certificate validation may have failed.")
         except Exception as e:
             self._log(f"[GITHUB] Unexpected error: {e}")
-            raise
+            self._log(f"[GITHUB] Error type: {type(e).__name__}")
+            import traceback
+            self._log(f"[GITHUB] Traceback:\n{traceback.format_exc()}")
+            raise Exception(f"{type(e).__name__}: {str(e)}")
     
     def _submit_to_wayback(self, proof_hash, proof_dict=None):
         """

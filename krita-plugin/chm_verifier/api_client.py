@@ -1,9 +1,15 @@
 """
 CHM API Client
 
-Handles submission of proofs to CHM backend/database.
-MVP: File-based mock (logs to local file)
-Phase 2: Replace with actual HTTP POST to backend API
+Handles communication with CHM backend API for:
+1. Server-side ED25519 signing (private key never leaves server)
+2. GitHub Gist timestamping (GitHub token never leaves server)
+3. Proof submission/storage
+
+SECURITY (BUG-015 FIX):
+- Plugin NO LONGER handles signing keys or GitHub tokens
+- All secrets managed server-side
+- Single API call: /api/sign-and-timestamp
 """
 
 import json
@@ -13,7 +19,7 @@ import hashlib
 
 
 class CHMApiClient:
-    """Client for submitting proofs to CHM backend"""
+    """Client for CHM backend API (signing + timestamping + storage)"""
     
     def __init__(self, config=None, debug_log=False):
         """
@@ -21,24 +27,134 @@ class CHMApiClient:
         
         Args:
             config: dict with optional settings:
-                - api_url: Backend API URL (default: mock file-based)
+                - api_url: Backend API URL (default: https://certified-human-made.org)
                 - timeout: Request timeout in seconds (default: 30)
             debug_log: bool - enable debug logging
         """
         self.config = config or {}
         self.debug_log = debug_log
         
-        # MVP: Use file-based mock
-        self.mode = self.config.get('mode', 'file_mock')
+        # API configuration
+        self.api_url = self.config.get('api_url', 'https://certified-human-made.org')
+        self.timeout = self.config.get('timeout', 30)
         
-        # File paths for MVP
+        # File paths for local storage (duplicate detection, etc.)
         self.data_dir = os.path.expanduser("~/.local/share/chm")
         os.makedirs(self.data_dir, exist_ok=True)
         
         self.proofs_file = os.path.join(self.data_dir, "submitted_proofs.jsonl")
         self.duplicates_index = os.path.join(self.data_dir, "file_hash_index.json")
         
-        self._log(f"API Client initialized (mode={self.mode})")
+        self._log(f"[API-INIT] API Client initialized")
+        self._log(f"[API-INIT] API URL: {self.api_url}")
+        self._log(f"[API-INIT] Timeout: {self.timeout}s")
+    
+    def sign_and_timestamp(self, proof_data):
+        """
+        Sign proof and create GitHub timestamp via server API.
+        
+        SECURITY (BUG-015 FIX):
+        - Server holds ED25519 private key (never exposed)
+        - Server holds GitHub token (never exposed)
+        - Returns signature + gist URL to plugin
+        
+        Args:
+            proof_data: dict - Proof data to sign
+        
+        Returns:
+            dict: {
+                'signature': str - ED25519 signature (base64),
+                'signature_version': str - 'ed25519-v1',
+                'github': dict or None - GitHub gist info,
+                'error': str - Error message if failed
+            }
+        """
+        self._log(f"[API-SIGN] === Requesting server-side signing + timestamping ===")
+        self._log(f"[API-SIGN] Session ID: {proof_data.get('session_id', 'unknown')[:16]}...")
+        self._log(f"[API-SIGN] Classification: {proof_data.get('classification')}")
+        
+        try:
+            # Use stdlib urllib (Krita doesn't have requests library)
+            import urllib.request
+            import urllib.error
+            import ssl
+            
+            # Prepare request
+            url = f"{self.api_url}/api/sign-and-timestamp"
+            
+            request_data = {
+                'proof_data': proof_data
+            }
+            
+            data_bytes = json.dumps(request_data).encode('utf-8')
+            
+            headers = {
+                'Content-Type': 'application/json',
+                'User-Agent': 'CHM-Krita-Plugin/1.0'
+            }
+            
+            req = urllib.request.Request(url, data=data_bytes, headers=headers, method='POST')
+            
+            self._log(f"[API-SIGN] POSTing to {url}...")
+            self._log(f"[API-SIGN] Payload size: {len(data_bytes)} bytes")
+            self._log(f"[API-SIGN] Timeout: {self.timeout}s")
+            
+            # Create SSL context
+            ssl_context = ssl.create_default_context()
+            
+            # Make request
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout, context=ssl_context) as response:
+                    response_data = response.read().decode('utf-8')
+                    result = json.loads(response_data)
+                    
+                    self._log(f"[API-SIGN] ✓ Server response received")
+                    self._log(f"[API-SIGN] ✓ Signature: {result.get('signature', 'MISSING')[:20]}...")
+                    self._log(f"[API-SIGN] ✓ Signature version: {result.get('signature_version')}")
+                    
+                    if result.get('github'):
+                        self._log(f"[API-SIGN] ✓ GitHub timestamp: {result['github']['url']}")
+                    else:
+                        self._log(f"[API-SIGN] ⚠️  No GitHub timestamp (non-fatal)")
+                    
+                    return result
+                    
+            except urllib.error.HTTPError as e:
+                error_body = e.read().decode('utf-8') if e.fp else 'No error body'
+                self._log(f"[API-SIGN] ✗ HTTP Error {e.code}: {error_body}")
+                
+                # Parse error message
+                try:
+                    error_data = json.loads(error_body)
+                    error_message = error_data.get('message', error_body)
+                except:
+                    error_message = error_body
+                
+                return {
+                    'error': f"Server error ({e.code}): {error_message}"
+                }
+                
+            except urllib.error.URLError as e:
+                self._log(f"[API-SIGN] ✗ Network Error: {e.reason}")
+                return {
+                    'error': f"Network error: {e.reason}. Check internet connection."
+                }
+                
+            except Exception as e:
+                self._log(f"[API-SIGN] ✗ Unexpected error: {e}")
+                import traceback
+                self._log(f"[API-SIGN] Traceback:\n{traceback.format_exc()}")
+                return {
+                    'error': f"Signing failed: {str(e)}"
+                }
+                
+        except Exception as e:
+            self._log(f"[API-SIGN] ✗ Fatal error: {e}")
+            import traceback
+            self._log(f"[API-SIGN] Traceback:\n{traceback.format_exc()}")
+            return {
+                'error': f"Fatal error: {str(e)}"
+            }
     
     def submit_proof(self, proof_dict):
         """

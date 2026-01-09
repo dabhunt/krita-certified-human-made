@@ -18,6 +18,9 @@
 secrets.json
 api_keys.json
 
+# Embedded signing key (auto-generated during build, included in release ZIP)
+krita-plugin/chm_verifier/signing_key_embedded.py
+
 # Private/internal documentation (keep /docs/ for public docs)
 
 # User session data (contains encrypted artwork metadata)

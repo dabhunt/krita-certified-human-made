@@ -144,3 +144,114 @@ def sign(message, secret_key):
     return signature(message, secret_key, public_key)
 
 
+def decodepoint(s):
+    """Decode 32 bytes to curve point"""
+    y = sum(2 ** i * bit(s, i) for i in range(0, b - 1))
+    x = xrecover(y)
+    if x & 1 != bit(s, b - 1):
+        x = q - x
+    P = [x, y]
+    return P
+
+
+def decodeint(s):
+    """Decode 32 bytes to integer (little-endian)"""
+    return sum(2 ** i * bit(s, i) for i in range(0, b))
+
+
+def verify(message, signature, public_key):
+    """
+    Verify an ED25519 signature.
+    
+    Args:
+        message: bytes that were signed
+        signature: 64-byte signature
+        public_key: 32-byte public key
+        
+    Returns:
+        bool: True if signature is valid, False otherwise
+    """
+    if len(signature) != 64:
+        return False
+    if len(public_key) != 32:
+        return False
+    
+    try:
+        # Decode public key
+        A = decodepoint(public_key)
+        
+        # Decode signature
+        Rs = signature[:32]
+        R = decodepoint(Rs)
+        S = decodeint(signature[32:])
+        
+        # Compute hash
+        h = Hint(Rs + public_key + message)
+        
+        # Verify equation: [S]B = R + [H(R,A,M)]A
+        # Left side
+        left = scalarmult(B, S)
+        
+        # Right side
+        right = edwards_add(R, scalarmult(A, h))
+        
+        # Compare
+        return left == right
+        
+    except Exception:
+        return False
+
+
+def verify_pem(message, signature_b64, public_key_pem):
+    """
+    Verify ED25519 signature using PEM-format public key.
+    
+    Args:
+        message: bytes that were signed
+        signature_b64: base64-encoded signature
+        public_key_pem: PEM-format public key
+        
+    Returns:
+        bool: True if signature is valid
+    """
+    import base64
+    
+    # Decode signature from base64
+    try:
+        signature = base64.b64decode(signature_b64)
+    except Exception:
+        return False
+    
+    # Extract raw public key bytes from PEM
+    # PEM format: -----BEGIN PUBLIC KEY-----\nbase64\n-----END PUBLIC KEY-----
+    try:
+        # Remove header/footer and whitespace
+        pem_clean = public_key_pem.replace('-----BEGIN PUBLIC KEY-----', '')
+        pem_clean = pem_clean.replace('-----END PUBLIC KEY-----', '')
+        pem_clean = pem_clean.strip()
+        
+        # Decode from base64
+        der_bytes = base64.b64decode(pem_clean)
+        
+        # DER format for ED25519 public key:
+        # 30 2a (SEQUENCE, 42 bytes)
+        #   30 05 (SEQUENCE, 5 bytes) - algorithm identifier
+        #     06 03 2b 65 70 (OID for ED25519)
+        #   03 21 (BIT STRING, 33 bytes)
+        #     00 (padding)
+        #     [32 bytes of actual public key]
+        
+        # Extract the last 32 bytes (the actual public key)
+        if len(der_bytes) >= 32:
+            public_key_bytes = der_bytes[-32:]
+        else:
+            return False
+        
+        # Verify signature
+        return verify(message, signature, public_key_bytes)
+        
+    except Exception as e:
+        print(f"[ED25519-VERIFY] Error parsing PEM: {e}")
+        return False
+
+

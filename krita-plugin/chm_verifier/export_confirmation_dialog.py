@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QDesktopServices, QCursor
 from PyQt5.QtCore import QUrl
+import os
 
 
 class ExportConfirmationDialog(QDialog):
@@ -28,6 +29,9 @@ class ExportConfirmationDialog(QDialog):
         super().__init__(parent)
         
         self.export_data = export_data or {}
+        
+        # Setup debug logging to file (not console - Windows has no visible console)
+        self.debug_log_path = os.path.expanduser("~/.local/share/chm/plugin_debug.log")
         
         self.setWindowTitle("CHM Export Successful")
         self.setMinimumSize(650, 600)
@@ -78,15 +82,30 @@ class ExportConfirmationDialog(QDialog):
         
         # Verification status group
         verify_group = QGroupBox("Verification & Timestamps")
-        verify_layout = QFormLayout()
+        verify_layout = QVBoxLayout()
         
+        # Timestamp status
+        timestamp_layout = QFormLayout()
         self.timestamp_label = QLabel("N/A")
         self.timestamp_label.setWordWrap(True)
+        timestamp_layout.addRow("Timestamps:", self.timestamp_label)
+        verify_layout.addLayout(timestamp_layout)
+        
+        # Error details section (collapsible)
+        self.error_details_text = QTextEdit()
+        self.error_details_text.setReadOnly(True)
+        self.error_details_text.setMaximumHeight(100)
+        self.error_details_text.setStyleSheet("font-family: monospace; font-size: 9pt; background-color: #fff3cd; color: #856404;")
+        self.error_details_text.hide()  # Hidden by default
+        verify_layout.addWidget(self.error_details_text)
+        
+        # C2PA status
+        c2pa_layout = QFormLayout()
         self.c2pa_label = QLabel("N/A")
         self.c2pa_label.setWordWrap(True)
+        c2pa_layout.addRow("C2PA:", self.c2pa_label)
+        verify_layout.addLayout(c2pa_layout)
         
-        verify_layout.addRow("Timestamps:", self.timestamp_label)
-        verify_layout.addRow("C2PA:", self.c2pa_label)
         verify_group.setLayout(verify_layout)
         layout.addWidget(verify_group)
         
@@ -195,12 +214,57 @@ class ExportConfirmationDialog(QDialog):
         timestamp_status = export_data.get("timestamp_status", "Not timestamped")
         c2pa_status = export_data.get("c2pa_status", "Not embedded")
         
+        # Get errors from export_data OR from proof_data.timestamps.errors (fallback)
+        timestamp_errors = export_data.get("timestamp_errors", [])
+        if not timestamp_errors:
+            # Fallback: Check if errors were saved in proof.json
+            proof_data = export_data.get("proof_data", {})
+            timestamps = proof_data.get("timestamps", {})
+            timestamp_errors = timestamps.get("errors", [])
+            if timestamp_errors:
+                self._debug_log(f"[EXPORT-MODAL-DEBUG] Found errors in proof_data.timestamps: {len(timestamp_errors)}")
+        
+        # DEBUG: Log to file (Windows has no visible console!)
+        self._debug_log(f"[EXPORT-MODAL-DEBUG] timestamp_status: {timestamp_status}")
+        self._debug_log(f"[EXPORT-MODAL-DEBUG] timestamp_errors: {timestamp_errors}")
+        self._debug_log(f"[EXPORT-MODAL-DEBUG] timestamp_errors type: {type(timestamp_errors)}")
+        self._debug_log(f"[EXPORT-MODAL-DEBUG] timestamp_errors length: {len(timestamp_errors)}")
+        
         # Style status labels based on success/failure
         self.timestamp_label.setText(timestamp_status)
         if timestamp_status.startswith("✓"):
             self.timestamp_label.setStyleSheet("color: green;")
         elif timestamp_status.startswith("⚠️"):
             self.timestamp_label.setStyleSheet("color: orange;")
+            
+            # Show detailed error information if available
+            if timestamp_errors:
+                self._debug_log(f"[EXPORT-MODAL-DEBUG] Showing error details box with {len(timestamp_errors)} errors")
+                error_text = "Detailed Error Information:\n\n"
+                for i, error in enumerate(timestamp_errors, 1):
+                    error_text += f"{i}. {error}\n\n"
+                self.error_details_text.setPlainText(error_text)
+                self.error_details_text.show()
+            else:
+                self._debug_log(f"[EXPORT-MODAL-DEBUG] No timestamp_errors to display")
+                
+                # Option 3: Fallback - show generic help message if errors list is empty
+                # This handles the case where GitHub failed silently without adding to errors[]
+                proof_data = export_data.get("proof_data", {})
+                success_count = proof_data.get("timestamps", {}).get("success_count", 0)
+                
+                if success_count < 2:
+                    self._debug_log(f"[EXPORT-MODAL-DEBUG] Fallback: success_count={success_count}, showing generic error help")
+                    fallback_text = (
+                        "Timestamp service failed but no error details were captured.\n\n"
+                        "Possible causes:\n"
+                        "• SSL certificate issues (Windows)\n"
+                        "• Network/firewall blocking GitHub\n"
+                        "• Missing GitHub token\n\n"
+                        f"Check debug log for details:\n{self.debug_log_path}"
+                    )
+                    self.error_details_text.setPlainText(fallback_text)
+                    self.error_details_text.show()
         
         self.c2pa_label.setText(c2pa_status)
         if c2pa_status.startswith("✓"):
@@ -268,4 +332,25 @@ class ExportConfirmationDialog(QDialog):
             pass
         
         return None
+    
+    def _debug_log(self, message):
+        """
+        Write debug message to log file (not console - Windows has no visible console).
+        
+        Args:
+            message: Debug message to log
+        """
+        try:
+            # Ensure log directory exists
+            log_dir = os.path.dirname(self.debug_log_path)
+            os.makedirs(log_dir, exist_ok=True)
+            
+            # Append to log file
+            with open(self.debug_log_path, 'a') as f:
+                from datetime import datetime
+                timestamp = datetime.now().isoformat()
+                f.write(f"[{timestamp}] {message}\n")
+        except Exception as e:
+            # Silently fail - don't break UI if logging fails
+            pass
 
