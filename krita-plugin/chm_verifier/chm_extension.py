@@ -115,7 +115,8 @@ class CHMExtension(Extension):
         # Set global API client in chm_core (for server-side ED25519 signing)
         from . import chm_core
         chm_core.set_api_client(self.api_client)
-        self._debug_log(f"[API-CLIENT] ✓ API client set (URL: {chm_config.API_URL})")
+        self._debug_log(f"[API-CLIENT] ✓ Environment: {chm_config.get_environment()}")
+        self._debug_log(f"[API-CLIENT] ✓ API URL: {chm_config.API_URL}")
         
         # Initialize local CHM timestamp log (Task 1.13)
         # NOTE: GitHub timestamping now handled by server API (combined with signing)

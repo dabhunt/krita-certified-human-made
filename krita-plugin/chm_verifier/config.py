@@ -62,11 +62,22 @@ IMPORT_CHECK_DELAY_POLLS = 6  # 6 polls × 500ms = 3 seconds
 # API CONFIGURATION
 # =============================================================================
 
+# Environment detection
+IS_PRODUCTION = os.environ.get('CHM_ENV', '').lower() == 'production'
+IS_DEVELOPMENT = not IS_PRODUCTION  # Default to development mode
+
 # Backend API URL for server-side signing and timestamping
-# Override with CHM_API_URL environment variable if needed
-# Default: https://certified-human-made.org
-# Development: https://YOUR-REPL-NAME.replit.app
-API_URL = os.environ.get('CHM_API_URL', 'https://certified-human-made.org')
+# Auto-detects dev vs production:
+# - Development (default): http://localhost:5000
+# - Production: https://certified-human-made.org
+# Override with CHM_API_URL environment variable
+if IS_PRODUCTION:
+    DEFAULT_API_URL = 'https://certified-human-made.org'
+else:
+    # Development mode - use local backend
+    DEFAULT_API_URL = 'http://localhost:5000'
+
+API_URL = os.environ.get('CHM_API_URL', DEFAULT_API_URL)
 
 # API timeout (seconds)
 API_TIMEOUT = 30
@@ -125,4 +136,20 @@ def is_debug_mode():
 def should_log_to_console():
     """Check if should log to console"""
     return LOG_TO_CONSOLE
+
+def is_production():
+    """Check if running in production mode"""
+    return IS_PRODUCTION
+
+def is_development():
+    """Check if running in development mode"""
+    return IS_DEVELOPMENT
+
+def get_environment():
+    """Get current environment as string"""
+    return 'production' if IS_PRODUCTION else 'development'
+
+def get_api_url():
+    """Get the configured API URL"""
+    return API_URL
 
