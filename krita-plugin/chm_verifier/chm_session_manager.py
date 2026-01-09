@@ -48,11 +48,22 @@ class CHMSessionManager:
             if self.DEBUG_LOG:
                 self._log(f"[UUID-CHECK] Checking UUID for document: {document.name()}")
             
+            # BINARY SEARCH CHECKPOINT F: Document annotation system test
+            self._log(f"[BFROS-CHECKPOINT-F] Testing document annotation system:")
+            self._log(f"[BFROS-CHECKPOINT-F]   Document name: {document.name()}")
+            self._log(f"[BFROS-CHECKPOINT-F]   Document fileName: {document.fileName() if document.fileName() else 'None (unsaved)'}")
+            
             # Check for existing UUID annotation
             existing_uuid = document.annotation("chm_session_uuid")
             
             if self.DEBUG_LOG:
                 self._log(f"[UUID-CHECK] annotation() returned: {type(existing_uuid)}, value: {existing_uuid}")
+            
+            # BINARY SEARCH CHECKPOINT F: Log annotation read result
+            self._log(f"[BFROS-CHECKPOINT-F]   annotation() type: {type(existing_uuid)}")
+            self._log(f"[BFROS-CHECKPOINT-F]   annotation() value: {existing_uuid}")
+            self._log(f"[BFROS-CHECKPOINT-F]   annotation() is None: {existing_uuid is None}")
+            self._log(f"[BFROS-CHECKPOINT-F]   annotation() is empty: {not existing_uuid or len(existing_uuid) == 0}")
             
             if existing_uuid and len(existing_uuid) > 0:
                 # Decode from bytes if necessary
@@ -63,6 +74,7 @@ class CHMSessionManager:
                     uuid_snippet = existing_uuid[:16] + "..." if len(existing_uuid) > 16 else existing_uuid
                     self._log(f"[UUID] ✓ Found existing UUID: {uuid_snippet}")
                 
+                self._log(f"[BFROS-CHECKPOINT-F] ✅ ANNOTATION READ SUCCESS: UUID exists")
                 return existing_uuid
             
             # No UUID found, generate new one
@@ -71,33 +83,56 @@ class CHMSessionManager:
             if self.DEBUG_LOG:
                 self._log(f"[UUID] No existing UUID, generating new: {new_uuid[:16]}...")
             
+            self._log(f"[BFROS-CHECKPOINT-F] Generated new UUID: {new_uuid}")
+            
             # Store in document annotation
             # Try both as string and as bytes (Krita API may expect either)
             try:
+                self._log(f"[BFROS-CHECKPOINT-F] Attempting setAnnotation() with string...")
                 document.setAnnotation("chm_session_uuid", new_uuid, "")
                 if self.DEBUG_LOG:
                     self._log(f"[UUID] ✓ setAnnotation() succeeded (string)")
+                self._log(f"[BFROS-CHECKPOINT-F] ✅ setAnnotation() SUCCESS (string)")
             except Exception as e1:
                 if self.DEBUG_LOG:
                     self._log(f"[UUID] setAnnotation() failed with string, trying bytes: {e1}")
+                self._log(f"[BFROS-CHECKPOINT-F] ⚠️ setAnnotation() FAILED (string): {e1}")
                 try:
+                    self._log(f"[BFROS-CHECKPOINT-F] Attempting setAnnotation() with bytes...")
                     document.setAnnotation("chm_session_uuid", new_uuid.encode('utf-8'), "")
                     if self.DEBUG_LOG:
                         self._log(f"[UUID] ✓ setAnnotation() succeeded (bytes)")
+                    self._log(f"[BFROS-CHECKPOINT-F] ✅ setAnnotation() SUCCESS (bytes)")
                 except Exception as e2:
                     self._log(f"[UUID] ⚠️ setAnnotation() failed with both string and bytes: {e2}")
+                    self._log(f"[BFROS-CHECKPOINT-F] ❌ setAnnotation() FAILED (both string and bytes): {e2}")
                     raise
             
             # Verify it was stored
+            self._log(f"[BFROS-CHECKPOINT-F] Verifying annotation was stored...")
             verify_uuid = document.annotation("chm_session_uuid")
+            
+            self._log(f"[BFROS-CHECKPOINT-F]   Read-back type: {type(verify_uuid)}")
+            self._log(f"[BFROS-CHECKPOINT-F]   Read-back value: {verify_uuid}")
+            
             if verify_uuid:
                 if isinstance(verify_uuid, bytes):
                     verify_uuid = verify_uuid.decode('utf-8')
                 if self.DEBUG_LOG:
                     self._log(f"[UUID] ✓ Verified UUID stored: {verify_uuid[:16]}...")
+                
+                verification_match = (verify_uuid == new_uuid)
+                self._log(f"[BFROS-CHECKPOINT-F]   Read-back matches: {verification_match}")
+                
+                if not verification_match:
+                    self._log(f"[BFROS-CHECKPOINT-F] ❌ UUID MISMATCH! Wrote '{new_uuid}', read back '{verify_uuid}'")
+                else:
+                    self._log(f"[BFROS-CHECKPOINT-F] ✅ VERIFICATION SUCCESS!")
             else:
                 if self.DEBUG_LOG:
                     self._log(f"[UUID] ⚠️ UUID not found after setAnnotation - annotation may not persist for unsaved docs")
+                self._log(f"[BFROS-CHECKPOINT-F] ❌ ANNOTATION NOT PERSISTED (read back None/empty)")
+                self._log(f"[BFROS-CHECKPOINT-F] → This could be the Windows bug! Annotations may not work on Windows.")
             
             return new_uuid
             
@@ -107,6 +142,8 @@ class CHMSessionManager:
             import traceback
             self._log(f"[UUID] Traceback: {traceback.format_exc()}")
             self._log(f"[UUID] Falling back to None (will use filepath or id())")
+            self._log(f"[BFROS-CHECKPOINT-F] ❌ EXCEPTION in annotation system: {e}")
+            self._log(f"[BFROS-CHECKPOINT-F] → This is likely the root cause on Windows!")
             return None
     
     def _get_document_key(self, document):
@@ -370,6 +407,14 @@ class CHMSessionManager:
             
             session = chm.CHMSession()
             
+            # BINARY SEARCH CHECKPOINT G: Log what we're about to import
+            self._log(f"[BFROS-CHECKPOINT-G] IMPORTING SESSION DATA:")
+            self._log(f"[BFROS-CHECKPOINT-G]   session_id: {session_data.get('session_id', 'missing')}")
+            self._log(f"[BFROS-CHECKPOINT-G]   event_count: {session_data.get('event_count', 0)}")
+            self._log(f"[BFROS-CHECKPOINT-G]   events array length: {len(session_data.get('events', []))}")
+            self._log(f"[BFROS-CHECKPOINT-G]   drawing_time_secs: {session_data.get('drawing_time_secs', 0)}")
+            self._log(f"[BFROS-CHECKPOINT-G]   layer_count: {session_data.get('layer_count', 'missing')}")
+            
             # Restore session properties
             if 'session_id' in session_data:
                 session.id = session_data['session_id']
@@ -385,8 +430,22 @@ class CHMSessionManager:
             if 'events' in session_data:
                 session.events = session_data['events']
                 self._log(f"[IMPORT-5] Restored {len(session.events)} events")
+                
+                # BINARY SEARCH CHECKPOINT G: Verify events were restored
+                events_restored_count = len(session.events) if hasattr(session, 'events') else 0
+                events_expected_count = len(session_data['events'])
+                events_match = (events_restored_count == events_expected_count)
+                
+                self._log(f"[BFROS-CHECKPOINT-G] Events restoration:")
+                self._log(f"[BFROS-CHECKPOINT-G]   Expected: {events_expected_count}")
+                self._log(f"[BFROS-CHECKPOINT-G]   Restored: {events_restored_count}")
+                self._log(f"[BFROS-CHECKPOINT-G]   Match: {events_match}")
+                
+                if not events_match:
+                    self._log(f"[BFROS-CHECKPOINT-G] ❌ EVENTS RESTORATION FAILED!")
             else:
                 self._log(f"[IMPORT-5] ⚠️ No events in saved session data")
+                self._log(f"[BFROS-CHECKPOINT-G] ❌ NO EVENTS IN JSON DATA!")
             
             if 'metadata' in session_data:
                 # Restore metadata (Python implementation uses dict)

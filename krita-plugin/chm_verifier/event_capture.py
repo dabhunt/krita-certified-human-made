@@ -451,10 +451,62 @@ class EventCapture:
                         json_snippet = session_json[:200] if len(session_json) > 200 else session_json
                         self._log(f"[RESUME-7a] JSON snippet: {json_snippet}...")
                         
+                        # BINARY SEARCH CHECKPOINT D: Parse JSON and log what we found on disk
+                        try:
+                            import json
+                            parsed_from_disk = json.loads(session_json)
+                            disk_event_count = parsed_from_disk.get('event_count', 0)
+                            disk_drawing_time = parsed_from_disk.get('drawing_time_secs', 0)
+                            disk_session_id = parsed_from_disk.get('session_id', 'unknown')
+                            disk_events_array_len = len(parsed_from_disk.get('events', []))
+                            
+                            self._log(f"[BFROS-CHECKPOINT-D] ✓ PARSED FROM DISK:")
+                            self._log(f"[BFROS-CHECKPOINT-D]   session_id: {disk_session_id}")
+                            self._log(f"[BFROS-CHECKPOINT-D]   event_count field: {disk_event_count}")
+                            self._log(f"[BFROS-CHECKPOINT-D]   events array length: {disk_events_array_len}")
+                            self._log(f"[BFROS-CHECKPOINT-D]   drawing_time_secs: {disk_drawing_time}")
+                            self._log(f"[BFROS-CHECKPOINT-D]   Data integrity: {'✅ PASS' if disk_event_count == disk_events_array_len else '❌ MISMATCH'}")
+                        except Exception as e:
+                            self._log(f"[BFROS-CHECKPOINT-D] ⚠️ Could not parse JSON from disk: {e}")
+                        
                         session = self.session_manager.import_session(doc, session_json)
                         
                         if session:
                             self._log(f"[RESUME-8] ✅ Session resumed: {session.id} (events: {session.event_count})")
+                            
+                            # BINARY SEARCH CHECKPOINT E: Verify session was restored correctly
+                            try:
+                                import json
+                                parsed_from_disk = json.loads(session_json)
+                                disk_event_count = parsed_from_disk.get('event_count', 0)
+                                disk_drawing_time = parsed_from_disk.get('drawing_time_secs', 0)
+                                
+                                restored_event_count = session.event_count
+                                restored_drawing_time = session.drawing_time_secs if hasattr(session, 'drawing_time_secs') else 0
+                                restored_events_len = len(session.events) if hasattr(session, 'events') else 0
+                                
+                                event_count_match = (restored_event_count == disk_event_count)
+                                drawing_time_match = (restored_drawing_time == disk_drawing_time)
+                                events_array_match = (restored_events_len == disk_event_count)
+                                
+                                self._log(f"[BFROS-CHECKPOINT-E] ✓ RESTORATION VERIFICATION:")
+                                self._log(f"[BFROS-CHECKPOINT-E]   event_count: disk={disk_event_count}, restored={restored_event_count}, match={event_count_match}")
+                                self._log(f"[BFROS-CHECKPOINT-E]   events array: disk={disk_event_count}, restored={restored_events_len}, match={events_array_match}")
+                                self._log(f"[BFROS-CHECKPOINT-E]   drawing_time: disk={disk_drawing_time}s, restored={restored_drawing_time}s, match={drawing_time_match}")
+                                
+                                if not event_count_match:
+                                    self._log(f"[BFROS-CHECKPOINT-E] ❌ EVENT COUNT MISMATCH!")
+                                if not drawing_time_match:
+                                    self._log(f"[BFROS-CHECKPOINT-E] ❌ DRAWING TIME MISMATCH!")
+                                if not events_array_match:
+                                    self._log(f"[BFROS-CHECKPOINT-E] ❌ EVENTS ARRAY LENGTH MISMATCH!")
+                                
+                                if event_count_match and drawing_time_match and events_array_match:
+                                    self._log(f"[BFROS-CHECKPOINT-E] ✅ ALL DATA RESTORED CORRECTLY!")
+                                else:
+                                    self._log(f"[BFROS-CHECKPOINT-E] ❌ DATA RESTORATION FAILED - THIS IS THE BUG!")
+                            except Exception as e:
+                                self._log(f"[BFROS-CHECKPOINT-E] ⚠️ Could not verify restoration: {e}")
                             
                             # Update metadata with current values (in case they were null or changed)
                             try:
@@ -613,6 +665,19 @@ class EventCapture:
             self._log(f"[PERSIST-1] ========== PERSIST SESSION ({context}) ==========")
             self._log(f"[PERSIST-2] Session ID: {session.id}, Events: {session.event_count}")
             
+            # BINARY SEARCH CHECKPOINT A: Session data snapshot (pre-persist)
+            try:
+                import json
+                session_data_snapshot = {
+                    'session_id': str(session.id),
+                    'event_count': int(session.event_count),
+                    'drawing_time_secs': int(session.drawing_time_secs) if hasattr(session, 'drawing_time_secs') else 0,
+                    'stroke_count': sum(1 for e in session.events if e.get('type') == 'stroke') if hasattr(session, 'events') else 0,
+                }
+                self._log(f"[BFROS-CHECKPOINT-A] ✓ SNAPSHOT BEFORE PERSIST: {json.dumps(session_data_snapshot)}")
+            except Exception as e:
+                self._log(f"[BFROS-CHECKPOINT-A] ⚠️ Could not capture snapshot: {e}")
+            
             # Get document key (UUID-based, works for saved and unsaved)
             doc_key = self.session_manager._get_document_key(doc)
             
@@ -655,6 +720,26 @@ class EventCapture:
             json_size = len(session_json)
             self._log(f"[PERSIST-6] ✓ Serialized: {json_size} bytes")
             
+            # BINARY SEARCH CHECKPOINT B: Verify JSON contains expected data
+            try:
+                import json
+                parsed = json.loads(session_json)
+                json_event_count = parsed.get('event_count', 0)
+                json_drawing_time = parsed.get('drawing_time_secs', 0)
+                json_stroke_count = len([e for e in parsed.get('events', []) if e.get('type') == 'stroke'])
+                
+                data_match = (json_event_count == session.event_count)
+                
+                self._log(f"[BFROS-CHECKPOINT-B] ✓ JSON DATA VALIDATION:")
+                self._log(f"[BFROS-CHECKPOINT-B]   event_count: {json_event_count} (match: {data_match})")
+                self._log(f"[BFROS-CHECKPOINT-B]   drawing_time: {json_drawing_time}s")
+                self._log(f"[BFROS-CHECKPOINT-B]   stroke_count: {json_stroke_count}")
+                
+                if not data_match:
+                    self._log(f"[BFROS-CHECKPOINT-B] ❌ DATA MISMATCH! JSON has {json_event_count}, session has {session.event_count}")
+            except Exception as e:
+                self._log(f"[BFROS-CHECKPOINT-B] ⚠️ Could not validate JSON: {e}")
+            
             # Save to disk using session key as filename
             self._log(f"[PERSIST-7] Saving to disk...")
             success = self.session_storage.save_session(session_key, session_json)
@@ -666,6 +751,36 @@ class EventCapture:
                 self._log(f"[PERSIST-8b] Session ID: {session.id}")
                 self._log(f"[PERSIST-8c] Events saved: {session.event_count}")
                 self._log(f"[PERSIST-8d] Unsaved doc: {not filepath}")
+                
+                # BINARY SEARCH CHECKPOINT C: Verify file exists and read it back
+                import os
+                if os.path.exists(session_file_path):
+                    file_size = os.path.getsize(session_file_path)
+                    self._log(f"[BFROS-CHECKPOINT-C] ✓ FILE EXISTS: {file_size} bytes on disk")
+                    
+                    # Read back and verify
+                    try:
+                        with open(session_file_path, 'r') as f:
+                            read_back = f.read()
+                        
+                        read_back_parsed = json.loads(read_back)
+                        read_event_count = read_back_parsed.get('event_count', 0)
+                        read_drawing_time = read_back_parsed.get('drawing_time_secs', 0)
+                        
+                        verification_pass = (read_event_count == session.event_count)
+                        
+                        self._log(f"[BFROS-CHECKPOINT-C] ✓ READ-BACK VERIFICATION:")
+                        self._log(f"[BFROS-CHECKPOINT-C]   event_count: {read_event_count} (match: {verification_pass})")
+                        self._log(f"[BFROS-CHECKPOINT-C]   drawing_time: {read_drawing_time}s")
+                        
+                        if not verification_pass:
+                            self._log(f"[BFROS-CHECKPOINT-C] ❌ READ-BACK MISMATCH! Expected {session.event_count}, got {read_event_count}")
+                        else:
+                            self._log(f"[BFROS-CHECKPOINT-C] ✅ VERIFICATION PASSED!")
+                    except Exception as e:
+                        self._log(f"[BFROS-CHECKPOINT-C] ⚠️ Could not read back file: {e}")
+                else:
+                    self._log(f"[BFROS-CHECKPOINT-C] ❌ FILE NOT FOUND after save!")
             else:
                 self._log(f"[PERSIST-8] ❌ Save failed")
                 

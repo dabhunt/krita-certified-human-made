@@ -84,17 +84,39 @@ def _compute_session_signature_via_server(proof_data: Dict[str, Any]) -> Optiona
     """
     global _API_CLIENT
     
+    print(f"[SIGNATURE-DEBUG] === Starting server-side signature request ===")
+    print(f"[SIGNATURE-DEBUG] _API_CLIENT type: {type(_API_CLIENT)}")
+    print(f"[SIGNATURE-DEBUG] _API_CLIENT is None: {_API_CLIENT is None}")
+    safe_flush()
+    
     if not _API_CLIENT:
-        print("[SIGNATURE] ⚠️  No API client set, cannot sign via server")
+        print("[SIGNATURE] ❌ CRITICAL: No API client set, cannot sign via server")
+        print("[SIGNATURE] This means chm_core.set_api_client() was not called during plugin setup")
         import sys
         safe_flush()
         return None
     
+    print(f"[SIGNATURE] ✓ API client available: {_API_CLIENT}")
     print(f"[SIGNATURE] Requesting server-side signing + timestamping...")
     safe_flush()
     
     # Call server API (handles both signing AND GitHub timestamp)
-    result = _API_CLIENT.sign_and_timestamp(proof_data)
+    try:
+        print(f"[SIGNATURE-DEBUG] About to call _API_CLIENT.sign_and_timestamp()...")
+        safe_flush()
+        
+        result = _API_CLIENT.sign_and_timestamp(proof_data)
+        
+        print(f"[SIGNATURE-DEBUG] API call completed, result type: {type(result)}")
+        print(f"[SIGNATURE-DEBUG] Result keys: {list(result.keys()) if isinstance(result, dict) else 'NOT_A_DICT'}")
+        safe_flush()
+        
+    except Exception as e:
+        print(f"[SIGNATURE] ❌ EXCEPTION during API call: {e}")
+        import traceback
+        print(f"[SIGNATURE] Traceback:\n{traceback.format_exc()}")
+        safe_flush()
+        return None
     
     if result.get('error'):
         print(f"[SIGNATURE] ✗ Server signing failed: {result['error']}")
@@ -114,6 +136,7 @@ def _compute_session_signature_via_server(proof_data: Dict[str, Any]) -> Optiona
         return result
     
     print(f"[SIGNATURE] ✗ No signature in server response")
+    print(f"[SIGNATURE-DEBUG] Full result: {result}")
     safe_flush()
     return None
 
