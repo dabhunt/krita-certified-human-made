@@ -59,6 +59,19 @@ AFK_THRESHOLD_POLLS = 2  # 2 polls × 500ms = 1 second
 IMPORT_CHECK_DELAY_POLLS = 6  # 6 polls × 500ms = 3 seconds
 
 # =============================================================================
+# API CONFIGURATION
+# =============================================================================
+
+# Backend API URL for server-side signing and timestamping
+# Override with CHM_API_URL environment variable if needed
+# Default: https://certified-human-made.org
+# Development: https://YOUR-REPL-NAME.replit.app
+API_URL = os.environ.get('CHM_API_URL', 'https://certified-human-made.org')
+
+# API timeout (seconds)
+API_TIMEOUT = 30
+
+# =============================================================================
 # CRYPTO & SECURITY
 # =============================================================================
 

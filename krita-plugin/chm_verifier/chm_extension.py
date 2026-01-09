@@ -105,12 +105,17 @@ class CHMExtension(Extension):
             print(f"[CHM-INIT] EventCapture initialized with session_storage: {self.event_capture.session_storage}")
         
         # Initialize API client for server-side signing + timestamp (Task 1.12)
-        self.api_client = CHMApiClient(debug_log=self.DEBUG_LOG)
+        from . import config as chm_config
+        api_config = {
+            'api_url': chm_config.API_URL,
+            'timeout': chm_config.API_TIMEOUT
+        }
+        self.api_client = CHMApiClient(config=api_config, debug_log=self.DEBUG_LOG)
         
         # Set global API client in chm_core (for server-side ED25519 signing)
         from . import chm_core
         chm_core.set_api_client(self.api_client)
-        self._debug_log("[API-CLIENT] ✓ API client set in chm_core module (server-side signing enabled)")
+        self._debug_log(f"[API-CLIENT] ✓ API client set (URL: {chm_config.API_URL})")
         
         # Initialize local CHM timestamp log (Task 1.13)
         # NOTE: GitHub timestamping now handled by server API (combined with signing)
