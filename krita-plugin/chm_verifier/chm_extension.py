@@ -5,7 +5,8 @@ This class extends Krita's Extension API and manages the lifecycle of CHM sessio
 """
 
 from krita import Extension, InfoObject
-from PyQt5.QtWidgets import QMessageBox
+from PyQt5.QtWidgets import QMessageBox, QApplication
+from PyQt5.QtCore import QThread, pyqtSignal
 import sys
 import os
 
@@ -28,6 +29,7 @@ from .timestamp_service import TripleTimestampService
 from .path_preferences import PathPreferences
 from .session_storage import SessionStorage
 from .chm_docker import CHMDockerWidget
+from .loading_dialog import LoadingDialog
 
 # Import safe_flush utility for Windows compatibility
 try:
@@ -40,6 +42,55 @@ except ImportError:
                 safe_flush()
             except (AttributeError, ValueError):
                 pass
+
+
+class VerificationWorker(QThread):
+    """Background worker for server verification during export"""
+    finished = pyqtSignal(object)  # Emits proof on success
+    error = pyqtSignal(str)  # Emits error message on failure
+    
+    def __init__(self, session_manager, doc, filename, ai_plugins, ai_plugins_detected, import_tracker):
+        super().__init__()
+        self.session_manager = session_manager
+        self.doc = doc
+        self.filename = filename
+        self.ai_plugins = ai_plugins
+        self.ai_plugins_detected = ai_plugins_detected
+        self.import_tracker = import_tracker
+    
+    def run(self):
+        """Run verification in background thread"""
+        try:
+            print("[WORKER] Starting server verification in background thread...")
+            safe_flush()
+            
+            proof = self.session_manager.finalize_session(
+                self.doc,
+                artwork_path=self.filename,
+                ai_plugins=self.ai_plugins,
+                ai_plugins_detected=self.ai_plugins_detected,
+                for_export=True,
+                import_tracker=self.import_tracker
+            )
+            
+            if not proof:
+                self.error.emit("Session finalization returned None")
+                return
+            
+            print("[WORKER] ✓ Verification completed successfully")
+            safe_flush()
+            self.finished.emit(proof)
+            
+        except RuntimeError as e:
+            print(f"[WORKER] ✗ RuntimeError: {e}")
+            safe_flush()
+            self.error.emit(str(e))
+        except Exception as e:
+            print(f"[WORKER] ✗ Unexpected error: {e}")
+            import traceback
+            traceback.print_exc()
+            safe_flush()
+            self.error.emit(f"Unexpected error: {e}")
 
 
 class CHMExtension(Extension):
@@ -307,33 +358,92 @@ class CHMExtension(Extension):
             self._log("[EXPORT] Generating proof from session snapshot...")
             self._log("[EXPORT] → Server will sign with ED25519 and create GitHub timestamp")
             
-            try:
-                proof = self.session_manager.finalize_session(
-                    doc, 
-                    artwork_path=filename,  # ← Pass artwork path for file hash
-                    ai_plugins=ai_plugins_enabled,
-                    ai_plugins_detected=len(ai_plugins_all) > 0,  # ← Track if any AI plugins exist (enabled or not)
-                    for_export=True,  # ← Create snapshot, don't destroy active session
-                    import_tracker=self.event_capture.import_tracker  # ← Pass import tracker for MixedMedia check
-                )
-            except RuntimeError as e:
-                # Server signing failed (no internet or server error)
-                self._log(f"[EXPORT] ❌ Server signing failed: {e}")
-                QMessageBox.critical(
-                    None,
-                    "CHM Export Error - Network Required",
-                    f"Failed to sign proof with CHM server:\n\n{e}\n\n"
-                    "Proof creation requires an internet connection to communicate "
-                    "with api.certified-human-made.org for cryptographic signing.\n\n"
-                    "Please check your internet connection and try again."
-                )
-                return
+            # Show loading dialog
+            loading_dialog = LoadingDialog("Verifying Signature", parent=None)
+            loading_dialog.show()
+            QApplication.processEvents()  # Ensure dialog is visible
             
-            if not proof:
-                raise Exception("Session finalization returned None")
+            # Create worker thread for background verification
+            worker = VerificationWorker(
+                self.session_manager,
+                doc,
+                filename,
+                ai_plugins_enabled,
+                len(ai_plugins_all) > 0,
+                self.event_capture.import_tracker
+            )
             
-            self._log(f"[EXPORT] ✅ Session finalized (signed by server + GitHub timestamp created)")
+            # Store context for callbacks
+            self._export_context = {
+                'filename': filename,
+                'loading_dialog': loading_dialog
+            }
             
+            # Connect signals
+            worker.finished.connect(self._on_verification_success)
+            worker.error.connect(self._on_verification_error)
+            
+            # Start background verification
+            self._log("[EXPORT] Starting background verification thread...")
+            worker.start()
+            
+            # Store worker reference to prevent garbage collection
+            self._current_worker = worker
+            
+            # Return here - completion handled in callbacks
+            return
+        
+        except Exception as e:
+            import traceback
+            self._log(f"[EXPORT] ❌ ERROR: {e}")
+            self._log(f"[EXPORT] Traceback: {traceback.format_exc()}")
+            
+            QMessageBox.critical(
+                None,
+                "CHM Export Error",
+                f"Error during export:\n\n{e}\n\nSee debug log for details."
+            )
+    
+    def _on_verification_error(self, error_message):
+        """Handle verification error in background thread"""
+        self._log(f"[EXPORT] ❌ Verification error: {error_message}")
+        
+        # Close loading dialog
+        if hasattr(self, '_export_context') and self._export_context.get('loading_dialog'):
+            self._export_context['loading_dialog'].close()
+        
+        # Show error to user
+        QMessageBox.critical(
+            None,
+            "CHM Export Error - Network Required",
+            f"Failed to sign proof with CHM server:\n\n{error_message}\n\n"
+            "Proof creation requires an internet connection to communicate "
+            "with api.certified-human-made.org for cryptographic signing.\n\n"
+            "Please check your internet connection and try again."
+        )
+        
+        # Clean up
+        if hasattr(self, '_current_worker'):
+            delattr(self, '_current_worker')
+        if hasattr(self, '_export_context'):
+            delattr(self, '_export_context')
+    
+    def _on_verification_success(self, proof):
+        """Handle successful verification from background thread"""
+        self._log(f"[EXPORT] ✅ Session finalized (signed by server + GitHub timestamp created)")
+        
+        # Close loading dialog
+        if hasattr(self, '_export_context') and self._export_context.get('loading_dialog'):
+            self._export_context['loading_dialog'].close()
+        
+        # Get filename from context
+        if not hasattr(self, '_export_context'):
+            self._log("[EXPORT] ❌ ERROR: Missing export context!")
+            return
+        
+        filename = self._export_context.get('filename')
+        
+        try:
             # Save proof JSON (for web app submission - contains file hash for duplicate detection)
             # The web app will use file_hash from this proof to store in DB
             import json
@@ -644,9 +754,15 @@ class CHMExtension(Extension):
             
             self._log("[EXPORT] ========== EXPORT COMPLETE ==========")
             
+            # Clean up
+            if hasattr(self, '_current_worker'):
+                delattr(self, '_current_worker')
+            if hasattr(self, '_export_context'):
+                delattr(self, '_export_context')
+            
         except Exception as e:
             import traceback
-            self._log(f"[EXPORT] ❌ ERROR: {e}")
+            self._log(f"[EXPORT] ❌ ERROR in verification callback: {e}")
             self._log(f"[EXPORT] Traceback: {traceback.format_exc()}")
             
             QMessageBox.critical(
@@ -654,6 +770,12 @@ class CHMExtension(Extension):
                 "CHM Export Error",
                 f"Error during export:\n\n{e}\n\nSee debug log for details."
             )
+            
+            # Clean up
+            if hasattr(self, '_current_worker'):
+                delattr(self, '_current_worker')
+            if hasattr(self, '_export_context'):
+                delattr(self, '_export_context')
     
     def view_current_session(self):
         """View current session without finalizing"""
