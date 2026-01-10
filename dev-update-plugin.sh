@@ -19,16 +19,22 @@ if [ ! -d "krita-plugin/chm_verifier" ]; then
     exit 1
 fi
 
-# Check if Krita is running
+# Check if Krita is running and force close it
 if pgrep -x "krita" > /dev/null; then
-    echo "⚠️  WARNING: Krita is currently running"
-    echo "   You must restart Krita for changes to take effect"
-    echo ""
-    read -p "Continue anyway? (y/n) " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "⚠️  Krita is currently running - force closing..."
+    pkill -9 "krita"
+    
+    # Wait a moment for the process to fully terminate
+    sleep 1
+    
+    # Verify it's closed
+    if pgrep -x "krita" > /dev/null; then
+        echo "❌ Error: Failed to close Krita"
         exit 1
     fi
+    
+    echo "✅ Krita closed successfully"
+    echo ""
 fi
 
 echo "Clearing Python cache..."
