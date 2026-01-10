@@ -47,7 +47,7 @@ class LoadingDialog(QDialog):
         self.label = QLabel()
         self.label.setAlignment(Qt.AlignCenter)
         font = QFont()
-        font.setPointSize(12)
+        font.setPointSize(20)  # 2x bigger (was 12)
         self.label.setFont(font)
         
         self.update_spinner()
@@ -60,11 +60,21 @@ class LoadingDialog(QDialog):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_spinner)
         self.timer.start(100)  # Update every 100ms
+        
+        # Additional timer to force event processing (keeps UI responsive)
+        self.event_timer = QTimer(self)
+        self.event_timer.timeout.connect(self.process_events)
+        self.event_timer.start(50)  # Process events every 50ms
+    
+    def process_events(self):
+        """Force Qt event processing to keep UI responsive"""
+        from PyQt5.QtWidgets import QApplication
+        QApplication.processEvents()
     
     def update_spinner(self):
         """Update spinner animation"""
         spinner = self.SPINNER_FRAMES[self.current_frame]
-        self.label.setText(f"{self.message} {spinner}")
+        self.label.setText(f"{spinner} {self.message}")
         self.current_frame = (self.current_frame + 1) % len(self.SPINNER_FRAMES)
     
     def set_message(self, message):
@@ -73,8 +83,10 @@ class LoadingDialog(QDialog):
         self.update_spinner()
     
     def closeEvent(self, event):
-        """Clean up timer on close"""
+        """Clean up timers on close"""
         if hasattr(self, 'timer'):
             self.timer.stop()
+        if hasattr(self, 'event_timer'):
+            self.event_timer.stop()
         super().closeEvent(event)
 

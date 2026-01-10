@@ -623,7 +623,11 @@ class CHMSession:
         
         # BUG#005 FIX: Pass doc_key instead of doc_id
         # Classify session (pass import tracker for MixedMedia check)
-        classification = self._classify(doc=doc, doc_key=doc_key, import_tracker=import_tracker)
+        # Use cached classification if available (for thread-safe exports)
+        if hasattr(self, '_cached_classification'):
+            classification = self._cached_classification
+        else:
+            classification = self._classify(doc=doc, doc_key=doc_key, import_tracker=import_tracker)
         
         print(f"[FLOW-3d] 🏷️ Classification: {classification}")
         safe_flush()

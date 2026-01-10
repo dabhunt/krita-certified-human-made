@@ -49,28 +49,30 @@ class VerificationWorker(QThread):
     finished = pyqtSignal(object)  # Emits proof on success
     error = pyqtSignal(str)  # Emits error message on failure
     
-    def __init__(self, session_manager, doc, filename, ai_plugins, ai_plugins_detected, import_tracker):
+    def __init__(self, session_snapshot, filename, api_client):
+        """
+        Initialize worker with thread-safe data only.
+        
+        Args:
+            session_snapshot: Pre-created session snapshot (CHMSession object)
+            filename: Path to exported artwork
+            api_client: CHMApiClient instance for server calls
+        """
         super().__init__()
-        self.session_manager = session_manager
-        self.doc = doc
+        self.session_snapshot = session_snapshot
         self.filename = filename
-        self.ai_plugins = ai_plugins
-        self.ai_plugins_detected = ai_plugins_detected
-        self.import_tracker = import_tracker
+        self.api_client = api_client
     
     def run(self):
-        """Run verification in background thread"""
+        """Run verification in background thread - NO Krita objects accessed!"""
         try:
             print("[WORKER] Starting server verification in background thread...")
             safe_flush()
             
-            proof = self.session_manager.finalize_session(
-                self.doc,
-                artwork_path=self.filename,
-                ai_plugins=self.ai_plugins,
-                ai_plugins_detected=self.ai_plugins_detected,
-                for_export=True,
-                import_tracker=self.import_tracker
+            # Finalize the snapshot (this will call the server)
+            # NOTE: session_snapshot is already a Python object, safe to use in thread
+            proof = self.session_snapshot.finalize(
+                artwork_path=self.filename
             )
             
             if not proof:
@@ -358,19 +360,49 @@ class CHMExtension(Extension):
             self._log("[EXPORT] Generating proof from session snapshot...")
             self._log("[EXPORT] → Server will sign with ED25519 and create GitHub timestamp")
             
-            # Show loading dialog
-            loading_dialog = LoadingDialog("Verifying Signature", parent=None)
-            loading_dialog.show()
-            QApplication.processEvents()  # Ensure dialog is visible
+            # CRITICAL: Create session snapshot in MAIN THREAD before worker starts
+            # Krita document objects are NOT thread-safe!
+            self._log("[EXPORT] Creating session snapshot in main thread...")
+            session = self.session_manager.get_session(doc)
             
-            # Create worker thread for background verification
+            # Create snapshot (simple copy, no params)
+            session_snapshot = session.create_snapshot()
+            
+            # Set AI plugin metadata on snapshot (in main thread)
+            if ai_plugins_enabled:
+                for plugin in ai_plugins_enabled:
+                    session_snapshot.mark_ai_assisted(plugin.get('name', 'Unknown'))
+            
+            session_snapshot.set_metadata(
+                ai_plugins_detected=len(ai_plugins_all) > 0
+            )
+            
+            # Pre-compute classification in main thread (requires doc access for import tracker)
+            doc_key = self.session_manager._get_document_key(doc)
+            classification = session_snapshot._classify(
+                doc=doc,
+                doc_key=doc_key,
+                import_tracker=self.event_capture.import_tracker
+            )
+            
+            # Store classification result so finalize() doesn't need to recompute
+            session_snapshot._cached_classification = classification
+            
+            self._log(f"[EXPORT] ✓ Snapshot created, classification: {classification}, starting background verification...")
+            
+            # Show loading dialog
+            loading_dialog = LoadingDialog(" Verifying Signature ", parent=None)
+            loading_dialog.show()
+            
+            # Force event processing to ensure dialog renders
+            QApplication.processEvents()
+            QApplication.processEvents()  # Call twice to ensure timer starts
+            
+            # Create worker thread with thread-safe snapshot (no Krita objects!)
             worker = VerificationWorker(
-                self.session_manager,
-                doc,
+                session_snapshot,
                 filename,
-                ai_plugins_enabled,
-                len(ai_plugins_all) > 0,
-                self.event_capture.import_tracker
+                self.api_client
             )
             
             # Store context for callbacks
@@ -406,21 +438,83 @@ class CHMExtension(Extension):
     
     def _on_verification_error(self, error_message):
         """Handle verification error in background thread"""
+        # BFROS BUG-020: Track timing for Windows modal gap issue
+        import time
+        callback_start = time.time()
+        
+        if self.DEBUG_LOG:
+            self._log("[MODAL-TIMING] ═══════════════════════════════════════════")
+            self._log("[MODAL-TIMING] VERIFICATION ERROR CALLBACK START")
+            self._log(f"[MODAL-TIMING] Timestamp: {callback_start}")
+            self._log("[MODAL-TIMING] ═══════════════════════════════════════════")
+        
         self._log(f"[EXPORT] ❌ Verification error: {error_message}")
         
-        # Close loading dialog
+        # Get loading dialog reference
+        loading_dialog = None
         if hasattr(self, '_export_context') and self._export_context.get('loading_dialog'):
-            self._export_context['loading_dialog'].close()
+            loading_dialog = self._export_context.get('loading_dialog')
         
-        # Show error to user
-        QMessageBox.critical(
-            None,
-            "CHM Export Error - Network Required",
+        if self.DEBUG_LOG:
+            self._log(f"[MODAL-TIMING] Loading dialog exists: {loading_dialog is not None}")
+            if loading_dialog:
+                self._log(f"[MODAL-TIMING] Loading dialog visible: {loading_dialog.isVisible()}")
+        
+        # BFROS BUG-020: Create error dialog BEFORE closing loading dialog (atomic swap)
+        if self.DEBUG_LOG:
+            pre_dialog_time = time.time()
+            self._log(f"[MODAL-TIMING] ├─ Creating error dialog...")
+        
+        # Create error dialog (but don't show yet)
+        error_dialog = QMessageBox(None)
+        error_dialog.setWindowTitle("CHM Export Error - Network Required")
+        error_dialog.setText(
             f"Failed to sign proof with CHM server:\n\n{error_message}\n\n"
             "Proof creation requires an internet connection to communicate "
             "with api.certified-human-made.org for cryptographic signing.\n\n"
             "Please check your internet connection and try again."
         )
+        error_dialog.setIcon(QMessageBox.Critical)
+        
+        if self.DEBUG_LOG:
+            dialog_created_time = time.time()
+            self._log(f"[MODAL-TIMING] ├─ Error dialog created ({(dialog_created_time - pre_dialog_time)*1000:.2f}ms)")
+        
+        # NOW close loading dialog (error dialog is ready to show)
+        if loading_dialog:
+            if self.DEBUG_LOG:
+                close_start_time = time.time()
+                self._log(f"[MODAL-TIMING] ├─ Closing loading dialog...")
+            
+            loading_dialog.close()
+            
+            if self.DEBUG_LOG:
+                close_end_time = time.time()
+                self._log(f"[MODAL-TIMING] ├─ Loading dialog closed ({(close_end_time - close_start_time)*1000:.2f}ms)")
+            
+            # Force event processing to ensure close completes
+            QApplication.processEvents()
+            
+            if self.DEBUG_LOG:
+                after_process_time = time.time()
+                self._log(f"[MODAL-TIMING] ├─ Events processed ({(after_process_time - close_end_time)*1000:.2f}ms)")
+        
+        # Show error dialog (should be instant since already created)
+        if self.DEBUG_LOG:
+            show_start_time = time.time()
+            if loading_dialog:
+                gap_duration = (show_start_time - close_end_time) * 1000
+                self._log(f"[MODAL-TIMING] ├─ GAP between close and show: {gap_duration:.2f}ms")
+            self._log(f"[MODAL-TIMING] ├─ Showing error dialog...")
+        
+        error_dialog.exec_()
+        
+        if self.DEBUG_LOG:
+            show_end_time = time.time()
+            self._log(f"[MODAL-TIMING] ├─ Error dialog shown ({(show_end_time - show_start_time)*1000:.2f}ms)")
+            total_time = (show_end_time - callback_start) * 1000
+            self._log(f"[MODAL-TIMING] ├─ Total callback time: {total_time:.2f}ms")
+            self._log("[MODAL-TIMING] ═══════════════════════════════════════════")
         
         # Clean up
         if hasattr(self, '_current_worker'):
@@ -430,18 +524,30 @@ class CHMExtension(Extension):
     
     def _on_verification_success(self, proof):
         """Handle successful verification from background thread"""
+        # BFROS: Track timing for BUG-020 (Windows modal gap issue)
+        import time
+        callback_start = time.time()
+        
+        if self.DEBUG_LOG:
+            self._log("[MODAL-TIMING] ═══════════════════════════════════════════")
+            self._log("[MODAL-TIMING] VERIFICATION SUCCESS CALLBACK START")
+            self._log(f"[MODAL-TIMING] Timestamp: {callback_start}")
+            self._log("[MODAL-TIMING] ═══════════════════════════════════════════")
+        
         self._log(f"[EXPORT] ✅ Session finalized (signed by server + GitHub timestamp created)")
         
-        # Close loading dialog
-        if hasattr(self, '_export_context') and self._export_context.get('loading_dialog'):
-            self._export_context['loading_dialog'].close()
-        
-        # Get filename from context
+        # Get filename from context BEFORE closing dialog (need for success message)
         if not hasattr(self, '_export_context'):
             self._log("[EXPORT] ❌ ERROR: Missing export context!")
             return
         
+        loading_dialog = self._export_context.get('loading_dialog')
         filename = self._export_context.get('filename')
+        
+        if self.DEBUG_LOG:
+            self._log(f"[MODAL-TIMING] Loading dialog exists: {loading_dialog is not None}")
+            if loading_dialog:
+                self._log(f"[MODAL-TIMING] Loading dialog visible: {loading_dialog.isVisible()}")
         
         try:
             # Save proof JSON (for web app submission - contains file hash for duplicate detection)
@@ -747,10 +853,55 @@ class CHMExtension(Extension):
             if gist_url_for_metadata:
                 self._log(f"[EXPORT] 🔗 Public timestamp proof: {gist_url_for_metadata}")
             
-            # Show structured confirmation dialog
+            # BFROS BUG-020: Close loading dialog and show success dialog atomically
+            # Strategy: Create success dialog BEFORE closing loading dialog to minimize gap
+            if self.DEBUG_LOG:
+                pre_dialog_time = time.time()
+                self._log(f"[MODAL-TIMING] ├─ Creating success dialog (before closing loading)...")
+            
+            # Create success dialog (but don't show yet)
             from .export_confirmation_dialog import ExportConfirmationDialog
             dialog = ExportConfirmationDialog(export_data=export_data)
+            
+            if self.DEBUG_LOG:
+                dialog_created_time = time.time()
+                self._log(f"[MODAL-TIMING] ├─ Success dialog created ({(dialog_created_time - pre_dialog_time)*1000:.2f}ms)")
+            
+            # NOW close loading dialog (success dialog is ready to show)
+            if loading_dialog:
+                if self.DEBUG_LOG:
+                    close_start_time = time.time()
+                    self._log(f"[MODAL-TIMING] ├─ Closing loading dialog...")
+                
+                loading_dialog.close()
+                
+                if self.DEBUG_LOG:
+                    close_end_time = time.time()
+                    self._log(f"[MODAL-TIMING] ├─ Loading dialog closed ({(close_end_time - close_start_time)*1000:.2f}ms)")
+                
+                # Force event processing to ensure close completes before showing next dialog
+                QApplication.processEvents()
+                
+                if self.DEBUG_LOG:
+                    after_process_time = time.time()
+                    self._log(f"[MODAL-TIMING] ├─ Events processed ({(after_process_time - close_end_time)*1000:.2f}ms)")
+            
+            # Show success dialog (should be instant since already created)
+            if self.DEBUG_LOG:
+                show_start_time = time.time()
+                if loading_dialog:
+                    gap_duration = (show_start_time - close_end_time) * 1000
+                    self._log(f"[MODAL-TIMING] ├─ GAP between close and show: {gap_duration:.2f}ms")
+                self._log(f"[MODAL-TIMING] ├─ Showing success dialog...")
+            
             dialog.exec_()
+            
+            if self.DEBUG_LOG:
+                show_end_time = time.time()
+                self._log(f"[MODAL-TIMING] ├─ Success dialog shown ({(show_end_time - show_start_time)*1000:.2f}ms)")
+                total_time = (show_end_time - callback_start) * 1000
+                self._log(f"[MODAL-TIMING] ├─ Total callback time: {total_time:.2f}ms")
+                self._log("[MODAL-TIMING] ═══════════════════════════════════════════")
             
             self._log("[EXPORT] ========== EXPORT COMPLETE ==========")
             
