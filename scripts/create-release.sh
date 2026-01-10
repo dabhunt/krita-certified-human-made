@@ -81,6 +81,34 @@ fi
 echo "✅ GitHub CLI installed and authenticated"
 echo ""
 
+# Check and load Rust environment
+echo "Checking Rust environment..."
+echo "-----------------------------"
+
+if ! command -v cargo &> /dev/null; then
+    echo "⚠️  Cargo not found in PATH, attempting to load Rust environment..."
+    if [ -f "$HOME/.cargo/env" ]; then
+        source "$HOME/.cargo/env"
+        if command -v cargo &> /dev/null; then
+            echo "✅ Rust environment loaded successfully"
+        else
+            echo "❌ Failed to load Rust environment!"
+            exit 1
+        fi
+    else
+        echo "❌ Rust not installed!"
+        echo ""
+        echo "Install Rust from: https://rustup.rs/"
+        echo ""
+        echo "After installation, restart your terminal or run:"
+        echo "  source \$HOME/.cargo/env"
+        exit 1
+    fi
+else
+    echo "✅ Rust/Cargo found: $(cargo --version)"
+fi
+echo ""
+
 # Step 1: Determine new version
 echo "Step 1: Determining version..."
 echo "------------------------------"
