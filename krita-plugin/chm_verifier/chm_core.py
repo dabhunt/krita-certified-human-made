@@ -225,6 +225,8 @@ def _verify_ed25519_signature(proof_data: Dict[str, Any], signature_b64: str) ->
         print(f"[VERIFY] Verifying ED25519 signature...")
         print(f"[VERIFY]   Message size: {len(message)} bytes")
         print(f"[VERIFY]   Signature: {signature_b64[:20]}...")
+        print(f"[VERIFY-DEBUG] First 100 chars: {message[:100]}")
+        print(f"[VERIFY-DEBUG] Last 50 chars: {message[-50:]}")
         
         # Verify with public key (pure Python)
         is_valid = ed25519_pure.verify_pem(message, signature_b64, ED25519_PUBLIC_KEY_PEM)
