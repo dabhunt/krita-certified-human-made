@@ -49,6 +49,52 @@ LIB_SIZE=$(ls -lh krita-plugin/chm_verifier/lib/chm.so | awk '{print $5}')
 echo "✅ Library found (${LIB_SIZE})"
 echo ""
 
+echo "Step 1.5: Validating production configuration..."
+echo "--------------------------------------------------"
+
+CONFIG_FILE="krita-plugin/chm_verifier/config.py"
+
+# Check default environment
+DEFAULT_ENV=$(grep "CHM_ENV = os.environ.get('CHM_ENV', " "$CONFIG_FILE" | sed -E "s/.*'CHM_ENV', '([^']+)'.*/\1/")
+echo "Default environment: $DEFAULT_ENV"
+
+if [ "$DEFAULT_ENV" != "production" ]; then
+    echo ""
+    echo "❌ ERROR: Release builds MUST default to production!"
+    echo ""
+    echo "Current default: CHM_ENV='$DEFAULT_ENV'"
+    echo "Expected default: CHM_ENV='production'"
+    echo ""
+    echo "Fix with:"
+    echo "  ./debug/set-environment.sh production"
+    echo ""
+    exit 1
+fi
+
+# Check default API URL for production
+PROD_URL=$(grep -A 3 "else:" "$CONFIG_FILE" | grep "DEFAULT_API_URL = " | sed -E "s/.*DEFAULT_API_URL = '([^']+)'.*/\1/")
+echo "Production API URL: $PROD_URL"
+
+if [ -z "$PROD_URL" ]; then
+    echo "⚠️  WARNING: Could not verify production API URL"
+fi
+
+# Verify it's not localhost
+if echo "$PROD_URL" | grep -q "localhost"; then
+    echo ""
+    echo "❌ ERROR: Production URL cannot be localhost!"
+    echo ""
+    echo "Current production URL: $PROD_URL"
+    echo "Expected: https://certified-human-made.org (or custom production URL)"
+    echo ""
+    exit 1
+fi
+
+echo "✅ Configuration is production-ready"
+echo "   - Default environment: production"
+echo "   - Production API URL: $PROD_URL"
+echo ""
+
 echo "Step 2: Verifying server API connectivity..."
 echo "---------------------------------------------"
 echo "✅ Signing now done server-side (no embedded key needed)"

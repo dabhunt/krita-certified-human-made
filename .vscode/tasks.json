@@ -213,6 +213,18 @@
         "focus": true
       },
       "problemMatcher": []
+    },
+    {
+      "label": "📦 Package Release",
+      "type": "shell",
+      "command": "./scripts/package-release.sh",
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": true
+      },
+      "problemMatcher": []
     }
   ]
 }

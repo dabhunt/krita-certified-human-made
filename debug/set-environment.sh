@@ -1,19 +1,38 @@
 #!/bin/bash
 #
-# Set CHM Plugin Environment (Dev vs Production)
+# CHM Plugin Environment Switcher
 #
-# This configures whether the plugin uses localhost:5000 (dev) or
-# certified-human-made.org (production) for the backend API.
+# Easily switch between development and production backend configurations.
+# This script helps you test the plugin against different backend environments.
 #
 # Usage:
-#   ./debug/set-environment.sh dev         # Use localhost:5000
-#   ./debug/set-environment.sh production  # Use certified-human-made.org
-#   ./debug/set-environment.sh status      # Show current setting
+#   ./debug/set-environment.sh production              # Use production backend
+#   ./debug/set-environment.sh development             # Use local backend
+#   ./debug/set-environment.sh production <CUSTOM_URL> # Use custom production URL
+#   ./debug/set-environment.sh development <CUSTOM_URL># Use custom dev URL
 #
 
 set -e
 
-MODE="$1"
+ENV_MODE="$1"
+CUSTOM_URL="$2"
+
+if [ -z "$ENV_MODE" ]; then
+    echo "❌ Error: Environment mode required"
+    echo ""
+    echo "Usage:"
+    echo "  $0 production              # Use production backend (certified-human-made.org)"
+    echo "  $0 development             # Use local backend (localhost:5000)"
+    echo "  $0 production <URL>        # Use custom production URL"
+    echo "  $0 development <URL>       # Use custom dev URL"
+    echo ""
+    echo "Examples:"
+    echo "  $0 production              # Standard production"
+    echo "  $0 development             # Local development"
+    echo "  $0 production https://your-repl.replit.app"
+    exit 1
+fi
+
 CONFIG_FILE="krita-plugin/chm_verifier/config.py"
 
 # Check if config file exists
@@ -23,97 +42,97 @@ if [ ! -f "$CONFIG_FILE" ]; then
     exit 1
 fi
 
-# Show current status
-show_status() {
-    echo ""
-    echo "📊 Current Configuration:"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    
-    # Check what's in the config
-    if grep -q "IS_PRODUCTION = os.environ.get('CHM_ENV', '').lower() == 'production'" "$CONFIG_FILE"; then
-        echo "Environment: 🔧 DEVELOPMENT (default)"
-        echo "API URL: http://localhost:5000"
-        echo ""
-        echo "💡 Plugin will connect to local backend server"
-    elif grep -q "IS_DEVELOPMENT = os.environ.get('CHM_ENV', '').lower() != 'production'" "$CONFIG_FILE"; then
-        echo "Environment: 🚀 PRODUCTION"
-        echo "API URL: https://certified-human-made.org"
-        echo ""
-        echo "💡 Plugin will connect to production server"
-    else
-        echo "⚠️  Unknown configuration"
-    fi
-    
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-}
+echo "🔧 CHM Plugin Environment Switcher"
+echo "=================================="
+echo ""
 
-# Handle commands
-case "$MODE" in
-    dev|development)
-        echo "🔧 Setting DEVELOPMENT mode..."
-        echo ""
-        
-        # Set IS_PRODUCTION = False (development is default)
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            # macOS
-            sed -i '' "s|^IS_PRODUCTION = .*|IS_PRODUCTION = os.environ.get('CHM_ENV', '').lower() == 'production'|" "$CONFIG_FILE"
-            sed -i '' "s|^IS_DEVELOPMENT = .*|IS_DEVELOPMENT = not IS_PRODUCTION  # Default to development mode|" "$CONFIG_FILE"
+case "$ENV_MODE" in
+    production)
+        if [ -n "$CUSTOM_URL" ]; then
+            NEW_DEFAULT_URL="$CUSTOM_URL"
+            echo "Setting PRODUCTION mode with CUSTOM URL..."
+            echo "  Environment: production"
+            echo "  API URL: $CUSTOM_URL"
         else
-            # Linux
-            sed -i "s|^IS_PRODUCTION = .*|IS_PRODUCTION = os.environ.get('CHM_ENV', '').lower() == 'production'|" "$CONFIG_FILE"
-            sed -i "s|^IS_DEVELOPMENT = .*|IS_DEVELOPMENT = not IS_PRODUCTION  # Default to development mode|" "$CONFIG_FILE"
+            NEW_DEFAULT_URL="https://certified-human-made.org"
+            echo "Setting PRODUCTION mode..."
+            echo "  Environment: production"
+            echo "  API URL: https://certified-human-made.org"
         fi
-        
-        echo "✅ Development mode enabled!"
-        show_status
-        echo "🔄 Next steps:"
-        echo "1. Run: ./build-for-krita.sh && ./dev-update-plugin.sh"
-        echo "2. Start local backend: cd ../certified-human-made && bun run dev"
-        echo "3. Restart Krita"
-        echo "4. Plugin will use http://localhost:5000"
+        NEW_ENV="production"
         ;;
-    
-    prod|production)
-        echo "🚀 Setting PRODUCTION mode..."
-        echo ""
         
-        # Set IS_PRODUCTION = True
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            # macOS
-            sed -i '' "s|^IS_PRODUCTION = .*|IS_PRODUCTION = True  # Production mode|" "$CONFIG_FILE"
-            sed -i '' "s|^IS_DEVELOPMENT = .*|IS_DEVELOPMENT = False|" "$CONFIG_FILE"
+    development)
+        if [ -n "$CUSTOM_URL" ]; then
+            NEW_DEFAULT_URL="$CUSTOM_URL"
+            echo "Setting DEVELOPMENT mode with CUSTOM URL..."
+            echo "  Environment: development"
+            echo "  API URL: $CUSTOM_URL"
         else
-            # Linux
-            sed -i "s|^IS_PRODUCTION = .*|IS_PRODUCTION = True  # Production mode|" "$CONFIG_FILE"
-            sed -i "s|^IS_DEVELOPMENT = .*|IS_DEVELOPMENT = False|" "$CONFIG_FILE"
+            NEW_DEFAULT_URL="http://localhost:5000"
+            echo "Setting DEVELOPMENT mode..."
+            echo "  Environment: development"
+            echo "  API URL: http://localhost:5000"
         fi
+        NEW_ENV="development"
+        ;;
         
-        echo "✅ Production mode enabled!"
-        show_status
-        echo "🔄 Next steps:"
-        echo "1. Run: ./build-for-krita.sh && ./dev-update-plugin.sh"
-        echo "2. Restart Krita"
-        echo "3. Plugin will use https://certified-human-made.org"
-        ;;
-    
-    status|check)
-        show_status
-        ;;
-    
     *)
-        echo "❌ Error: Invalid mode"
-        echo ""
-        echo "Usage:"
-        echo "  $0 dev          # Set to development mode (localhost:5000)"
-        echo "  $0 production   # Set to production mode (certified-human-made.org)"
-        echo "  $0 status       # Show current configuration"
-        echo ""
-        echo "Examples:"
-        echo "  $0 dev          # For local development"
-        echo "  $0 production   # For testing with production server"
-        echo "  $0 status       # Check current setting"
+        echo "❌ Error: Invalid environment mode: $ENV_MODE"
+        echo "Must be 'production' or 'development'"
         exit 1
         ;;
 esac
 
+echo ""
+echo "📝 Updating config.py..."
+
+# Create backup
+cp "$CONFIG_FILE" "$CONFIG_FILE.backup"
+
+# Update CHM_ENV default
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    # macOS sed syntax
+    sed -i '' "s|^CHM_ENV = os.environ.get('CHM_ENV', '.*').lower()|CHM_ENV = os.environ.get('CHM_ENV', '$NEW_ENV').lower()|" "$CONFIG_FILE"
+else
+    # Linux sed syntax
+    sed -i "s|^CHM_ENV = os.environ.get('CHM_ENV', '.*').lower()|CHM_ENV = os.environ.get('CHM_ENV', '$NEW_ENV').lower()|" "$CONFIG_FILE"
+fi
+
+# Update the if/else block for DEFAULT_API_URL based on environment
+if [ "$NEW_ENV" = "development" ]; then
+    # Set development URL
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sed -i '' "s|^    DEFAULT_API_URL = 'http://localhost:5000'|    DEFAULT_API_URL = '$NEW_DEFAULT_URL'|" "$CONFIG_FILE"
+    else
+        sed -i "s|^    DEFAULT_API_URL = 'http://localhost:5000'|    DEFAULT_API_URL = '$NEW_DEFAULT_URL'|" "$CONFIG_FILE"
+    fi
+else
+    # Set production URL
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sed -i '' "s|^    DEFAULT_API_URL = 'https://certified-human-made.org'|    DEFAULT_API_URL = '$NEW_DEFAULT_URL'|" "$CONFIG_FILE"
+    else
+        sed -i "s|^    DEFAULT_API_URL = 'https://certified-human-made.org'|    DEFAULT_API_URL = '$NEW_DEFAULT_URL'|" "$CONFIG_FILE"
+    fi
+fi
+
+echo "✅ Config updated!"
+echo ""
+echo "Current configuration in config.py:"
+echo "-----------------------------------"
+grep "^CHM_ENV = " "$CONFIG_FILE" || true
+grep "^    DEFAULT_API_URL = " "$CONFIG_FILE" || true
+echo ""
+echo "🔄 Next steps:"
+echo "1. Build plugin: ./build-for-krita.sh"
+echo "2. Update plugin: ./dev-update-plugin.sh"
+echo "3. Restart Krita"
+echo "4. Test export"
+echo ""
+echo "💡 To override at runtime, set environment variable before launching Krita:"
+echo "   export CHM_API_URL='https://your-custom-url.com'"
+echo "   /Applications/Krita.app/Contents/MacOS/krita"
+echo ""
+echo "📋 Backup saved to: $CONFIG_FILE.backup"
+echo "   To restore: cp $CONFIG_FILE.backup $CONFIG_FILE"
+echo ""

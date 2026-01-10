@@ -104,8 +104,11 @@ class CHMExtension(Extension):
         if self.DEBUG_LOG:
             print(f"[CHM-INIT] EventCapture initialized with session_storage: {self.event_capture.session_storage}")
         
-        # Initialize API client for server-side signing + timestamp (Task 1.12)
+        # Log configuration on startup (helps debug environment issues)
         from . import config as chm_config
+        chm_config.log_config_on_startup()
+        
+        # Initialize API client for server-side signing + timestamp (Task 1.12)
         api_config = {
             'api_url': chm_config.API_URL,
             'timeout': chm_config.API_TIMEOUT

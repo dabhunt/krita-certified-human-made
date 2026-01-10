@@ -63,19 +63,30 @@ IMPORT_CHECK_DELAY_POLLS = 6  # 6 polls × 500ms = 3 seconds
 # =============================================================================
 
 # Environment detection
-IS_PRODUCTION = os.environ.get('CHM_ENV', '').lower() == 'production'
-IS_DEVELOPMENT = not IS_PRODUCTION  # Default to development mode
+# IMPORTANT: Defaults to 'production' for safety in release builds
+# Development mode must be explicitly set via CHM_ENV=development
+CHM_ENV = os.environ.get('CHM_ENV', 'production').lower()
+IS_PRODUCTION = CHM_ENV == 'production'
+IS_DEVELOPMENT = CHM_ENV == 'development'
 
 # Backend API URL for server-side signing and timestamping
-# Auto-detects dev vs production:
-# - Development (default): http://localhost:5000
-# - Production: https://certified-human-made.org
-# Override with CHM_API_URL environment variable
-if IS_PRODUCTION:
-    DEFAULT_API_URL = 'https://certified-human-made.org'
-else:
-    # Development mode - use local backend
+# Priority order:
+# 1. CHM_API_URL environment variable (explicit override - highest priority)
+# 2. CHM_ENV=development → http://localhost:5000
+# 3. CHM_ENV=production → https://certified-human-made.org (DEFAULT)
+#
+# For testing dev plugin against production backend:
+#   export CHM_ENV=development
+#   export CHM_API_URL=https://certified-human-made.org
+#
+# For testing dev plugin against Replit:
+#   export CHM_ENV=development
+#   export CHM_API_URL=https://your-repl.replit.app
+if IS_DEVELOPMENT:
     DEFAULT_API_URL = 'http://localhost:5000'
+else:
+    # Production mode - use production server
+    DEFAULT_API_URL = 'https://certified-human-made.org'
 
 API_URL = os.environ.get('CHM_API_URL', DEFAULT_API_URL)
 
@@ -147,9 +158,44 @@ def is_development():
 
 def get_environment():
     """Get current environment as string"""
-    return 'production' if IS_PRODUCTION else 'development'
+    return CHM_ENV
 
 def get_api_url():
     """Get the configured API URL"""
     return API_URL
+
+def log_config_on_startup():
+    """
+    Log configuration on plugin startup for debugging.
+    This helps diagnose environment and API URL issues.
+    """
+    import sys
+    
+    if sys.stdout is not None:
+        print("[CONFIG] ================================")
+        print(f"[CONFIG] CHM Plugin Environment Config")
+        print("[CONFIG] ================================")
+        print(f"[CONFIG] Environment: {CHM_ENV}")
+        print(f"[CONFIG] IS_PRODUCTION: {IS_PRODUCTION}")
+        print(f"[CONFIG] IS_DEVELOPMENT: {IS_DEVELOPMENT}")
+        print(f"[CONFIG] API_URL: {API_URL}")
+        
+        # Show source of API_URL
+        if 'CHM_API_URL' in os.environ:
+            print(f"[CONFIG] API_URL source: CHM_API_URL environment variable (explicit override)")
+        else:
+            print(f"[CONFIG] API_URL source: DEFAULT_API_URL (from CHM_ENV={CHM_ENV})")
+        
+        # Show source of CHM_ENV
+        if 'CHM_ENV' in os.environ:
+            print(f"[CONFIG] CHM_ENV source: Environment variable")
+        else:
+            print(f"[CONFIG] CHM_ENV source: Default (production)")
+        
+        print("[CONFIG] ================================")
+        
+        try:
+            sys.stdout.flush()
+        except (AttributeError, ValueError):
+            pass
 
