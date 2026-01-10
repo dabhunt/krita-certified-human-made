@@ -106,7 +106,7 @@ class CHMExtension(Extension):
         
         # Log configuration on startup (helps debug environment issues)
         from . import config as chm_config
-        chm_config.log_config_on_startup()
+        chm_config.log_config_on_startup(logger_func=self._debug_log)
         
         # Initialize API client for server-side signing + timestamp (Task 1.12)
         api_config = {

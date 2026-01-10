@@ -69,44 +69,63 @@ class CHMApiClient:
                 'error': str - Error message if failed
             }
         """
-        self._log(f"[API-SIGN] === Requesting server-side signing + timestamping ===")
+        self._log(f"[API-SIGN] ========================================")
+        self._log(f"[API-SIGN] STARTING SERVER SIGNING REQUEST")
+        self._log(f"[API-SIGN] ========================================")
         self._log(f"[API-SIGN] Session ID: {proof_data.get('session_id', 'unknown')[:16]}...")
         self._log(f"[API-SIGN] Classification: {proof_data.get('classification')}")
+        self._log(f"[API-SIGN] API URL configured: {self.api_url}")
         
         try:
+            self._log(f"[API-SIGN] [BFROS-1] Importing urllib modules...")
             # Use stdlib urllib (Krita doesn't have requests library)
             import urllib.request
             import urllib.error
             import ssl
+            self._log(f"[API-SIGN] [BFROS-1] ✓ urllib modules imported")
             
             # Prepare request
             url = f"{self.api_url}/api/sign-and-timestamp"
+            self._log(f"[API-SIGN] [BFROS-2] Target URL: {url}")
             
             request_data = {
                 'proof_data': proof_data
             }
             
+            self._log(f"[API-SIGN] [BFROS-3] Encoding request data...")
             data_bytes = json.dumps(request_data).encode('utf-8')
+            self._log(f"[API-SIGN] [BFROS-3] ✓ Payload size: {len(data_bytes)} bytes")
             
             headers = {
                 'Content-Type': 'application/json',
                 'User-Agent': 'CHM-Krita-Plugin/1.0'
             }
+            self._log(f"[API-SIGN] [BFROS-4] Headers: {headers}")
             
+            self._log(f"[API-SIGN] [BFROS-5] Creating urllib Request object...")
             req = urllib.request.Request(url, data=data_bytes, headers=headers, method='POST')
+            self._log(f"[API-SIGN] [BFROS-5] ✓ Request object created")
             
-            self._log(f"[API-SIGN] POSTing to {url}...")
-            self._log(f"[API-SIGN] Payload size: {len(data_bytes)} bytes")
-            self._log(f"[API-SIGN] Timeout: {self.timeout}s")
-            
-            # Create SSL context
+            self._log(f"[API-SIGN] [BFROS-6] Creating SSL context...")
             ssl_context = ssl.create_default_context()
+            self._log(f"[API-SIGN] [BFROS-6] ✓ SSL context created")
+            
+            self._log(f"[API-SIGN] [BFROS-7] === MAKING HTTP REQUEST ===")
+            self._log(f"[API-SIGN] [BFROS-7] URL: {url}")
+            self._log(f"[API-SIGN] [BFROS-7] Timeout: {self.timeout}s")
+            self._log(f"[API-SIGN] [BFROS-7] About to call urllib.request.urlopen()...")
             
             # Make request
             try:
                 with urllib.request.urlopen(req, timeout=self.timeout, context=ssl_context) as response:
+                    self._log(f"[API-SIGN] [BFROS-8] ✓ Got response from server!")
+                    self._log(f"[API-SIGN] [BFROS-8] HTTP Status: {response.status}")
+                    
                     response_data = response.read().decode('utf-8')
+                    self._log(f"[API-SIGN] [BFROS-9] ✓ Response body read ({len(response_data)} bytes)")
+                    
                     result = json.loads(response_data)
+                    self._log(f"[API-SIGN] [BFROS-10] ✓ JSON parsed successfully")
                     
                     self._log(f"[API-SIGN] ✓ Server response received")
                     self._log(f"[API-SIGN] ✓ Signature: {result.get('signature', 'MISSING')[:20]}...")
@@ -117,11 +136,18 @@ class CHMApiClient:
                     else:
                         self._log(f"[API-SIGN] ⚠️  No GitHub timestamp (non-fatal)")
                     
+                    self._log(f"[API-SIGN] ========================================")
+                    self._log(f"[API-SIGN] REQUEST COMPLETED SUCCESSFULLY")
+                    self._log(f"[API-SIGN] ========================================")
                     return result
                     
             except urllib.error.HTTPError as e:
+                self._log(f"[API-SIGN] [BFROS-ERROR] ❌ HTTP Error!")
+                self._log(f"[API-SIGN] [BFROS-ERROR] Status code: {e.code}")
+                self._log(f"[API-SIGN] [BFROS-ERROR] Reason: {e.reason}")
+                
                 error_body = e.read().decode('utf-8') if e.fp else 'No error body'
-                self._log(f"[API-SIGN] ✗ HTTP Error {e.code}: {error_body}")
+                self._log(f"[API-SIGN] [BFROS-ERROR] Error body: {error_body}")
                 
                 # Parse error message
                 try:
@@ -135,23 +161,35 @@ class CHMApiClient:
                 }
                 
             except urllib.error.URLError as e:
-                self._log(f"[API-SIGN] ✗ Network Error: {e.reason}")
+                self._log(f"[API-SIGN] [BFROS-ERROR] ❌ URL/Network Error!")
+                self._log(f"[API-SIGN] [BFROS-ERROR] Error type: {type(e.reason).__name__}")
+                self._log(f"[API-SIGN] [BFROS-ERROR] Error reason: {e.reason}")
+                self._log(f"[API-SIGN] [BFROS-ERROR] This usually means:")
+                self._log(f"[API-SIGN] [BFROS-ERROR]   - DNS resolution failed")
+                self._log(f"[API-SIGN] [BFROS-ERROR]   - Server unreachable")
+                self._log(f"[API-SIGN] [BFROS-ERROR]   - Connection timeout")
+                self._log(f"[API-SIGN] [BFROS-ERROR]   - SSL/TLS handshake failed")
+                
                 return {
-                    'error': f"Network error: {e.reason}. Check internet connection."
+                    'error': f"Network error: {e.reason}. Check internet connection and API URL."
                 }
                 
             except Exception as e:
-                self._log(f"[API-SIGN] ✗ Unexpected error: {e}")
+                self._log(f"[API-SIGN] [BFROS-ERROR] ❌ Unexpected exception during request!")
+                self._log(f"[API-SIGN] [BFROS-ERROR] Exception type: {type(e).__name__}")
+                self._log(f"[API-SIGN] [BFROS-ERROR] Exception message: {str(e)}")
                 import traceback
-                self._log(f"[API-SIGN] Traceback:\n{traceback.format_exc()}")
+                self._log(f"[API-SIGN] [BFROS-ERROR] Traceback:\n{traceback.format_exc()}")
                 return {
                     'error': f"Signing failed: {str(e)}"
                 }
                 
         except Exception as e:
-            self._log(f"[API-SIGN] ✗ Fatal error: {e}")
+            self._log(f"[API-SIGN] [BFROS-ERROR] ❌ Fatal error in sign_and_timestamp()!")
+            self._log(f"[API-SIGN] [BFROS-ERROR] Exception type: {type(e).__name__}")
+            self._log(f"[API-SIGN] [BFROS-ERROR] Exception message: {str(e)}")
             import traceback
-            self._log(f"[API-SIGN] Traceback:\n{traceback.format_exc()}")
+            self._log(f"[API-SIGN] [BFROS-ERROR] Traceback:\n{traceback.format_exc()}")
             return {
                 'error': f"Fatal error: {str(e)}"
             }
@@ -352,9 +390,15 @@ class CHMApiClient:
             return {'error': str(e)}
     
     def _log(self, message):
-        """Print debug log if enabled"""
+        """Log debug message to file if enabled"""
         if self.debug_log:
-            print(message)
+            # Import debug_log from __init__.py to write to file
+            try:
+                from . import debug_log
+                debug_log(message)
+            except ImportError:
+                # Fallback to print if debug_log not available
+                print(message)
 
 
 if __name__ == "__main__":

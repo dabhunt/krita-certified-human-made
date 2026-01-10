@@ -164,38 +164,37 @@ def get_api_url():
     """Get the configured API URL"""
     return API_URL
 
-def log_config_on_startup():
+def log_config_on_startup(logger_func=None):
     """
     Log configuration on plugin startup for debugging.
     This helps diagnose environment and API URL issues.
-    """
-    import sys
     
-    if sys.stdout is not None:
-        print("[CONFIG] ================================")
-        print(f"[CONFIG] CHM Plugin Environment Config")
-        print("[CONFIG] ================================")
-        print(f"[CONFIG] Environment: {CHM_ENV}")
-        print(f"[CONFIG] IS_PRODUCTION: {IS_PRODUCTION}")
-        print(f"[CONFIG] IS_DEVELOPMENT: {IS_DEVELOPMENT}")
-        print(f"[CONFIG] API_URL: {API_URL}")
-        
-        # Show source of API_URL
-        if 'CHM_API_URL' in os.environ:
-            print(f"[CONFIG] API_URL source: CHM_API_URL environment variable (explicit override)")
-        else:
-            print(f"[CONFIG] API_URL source: DEFAULT_API_URL (from CHM_ENV={CHM_ENV})")
-        
-        # Show source of CHM_ENV
-        if 'CHM_ENV' in os.environ:
-            print(f"[CONFIG] CHM_ENV source: Environment variable")
-        else:
-            print(f"[CONFIG] CHM_ENV source: Default (production)")
-        
-        print("[CONFIG] ================================")
-        
-        try:
-            sys.stdout.flush()
-        except (AttributeError, ValueError):
-            pass
+    Args:
+        logger_func: Optional logging function (e.g., _debug_log from __init__.py)
+                    If None, uses print() to stdout
+    """
+    # Use provided logger or fallback to print
+    log = logger_func if logger_func else print
+    
+    log("[CONFIG] ================================")
+    log(f"[CONFIG] CHM Plugin Environment Config")
+    log("[CONFIG] ================================")
+    log(f"[CONFIG] Environment: {CHM_ENV}")
+    log(f"[CONFIG] IS_PRODUCTION: {IS_PRODUCTION}")
+    log(f"[CONFIG] IS_DEVELOPMENT: {IS_DEVELOPMENT}")
+    log(f"[CONFIG] API_URL: {API_URL}")
+    
+    # Show source of API_URL
+    if 'CHM_API_URL' in os.environ:
+        log(f"[CONFIG] API_URL source: CHM_API_URL environment variable (explicit override)")
+    else:
+        log(f"[CONFIG] API_URL source: DEFAULT_API_URL (from CHM_ENV={CHM_ENV})")
+    
+    # Show source of CHM_ENV
+    if 'CHM_ENV' in os.environ:
+        log(f"[CONFIG] CHM_ENV source: Environment variable")
+    else:
+        log(f"[CONFIG] CHM_ENV source: Default (production)")
+    
+    log("[CONFIG] ================================")
 
