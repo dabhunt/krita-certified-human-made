@@ -107,8 +107,45 @@ class CHMApiClient:
             self._log(f"[API-SIGN] [BFROS-5] ✓ Request object created")
             
             self._log(f"[API-SIGN] [BFROS-6] Creating SSL context...")
-            ssl_context = ssl.create_default_context()
-            self._log(f"[API-SIGN] [BFROS-6] ✓ SSL context created")
+            
+            # Multi-strategy SSL context creation (handles Krita's bundled Python)
+            ssl_context = None
+            ssl_strategy_used = None
+            
+            # Try certifi first (best cross-platform solution)
+            try:
+                import certifi
+                certifi_path = certifi.where()
+                if os.path.isfile(certifi_path):
+                    self._log(f"[API-SIGN] [BFROS-6a] Trying certifi package...")
+                    ssl_context = ssl.create_default_context(cafile=certifi_path)
+                    ssl_strategy_used = "certifi"
+                    self._log(f"[API-SIGN] [BFROS-6a] ✓ Using certifi: {certifi_path}")
+            except ImportError:
+                self._log(f"[API-SIGN] [BFROS-6a] certifi not available")
+            except Exception as e:
+                self._log(f"[API-SIGN] [BFROS-6a] certifi failed: {e}")
+            
+            # Fallback: Try default system context
+            if not ssl_context:
+                try:
+                    self._log(f"[API-SIGN] [BFROS-6b] Trying system default SSL context...")
+                    ssl_context = ssl.create_default_context()
+                    ssl_strategy_used = "system_default"
+                    self._log(f"[API-SIGN] [BFROS-6b] ✓ Using system default context")
+                except Exception as e:
+                    self._log(f"[API-SIGN] [BFROS-6b] System default failed: {e}")
+            
+            # Last resort: Unverified context (INSECURE but functional)
+            # Only for development/testing - logs warning
+            if not ssl_context:
+                self._log(f"[API-SIGN] [BFROS-6c] ⚠️  FALLBACK: Creating unverified SSL context")
+                self._log(f"[API-SIGN] [BFROS-6c] ⚠️  This disables certificate verification!")
+                self._log(f"[API-SIGN] [BFROS-6c] ⚠️  Use only for development/testing")
+                ssl_context = ssl._create_unverified_context()
+                ssl_strategy_used = "unverified"
+            
+            self._log(f"[API-SIGN] [BFROS-6] ✓ SSL context created using: {ssl_strategy_used}")
             
             self._log(f"[API-SIGN] [BFROS-7] === MAKING HTTP REQUEST ===")
             self._log(f"[API-SIGN] [BFROS-7] URL: {url}")

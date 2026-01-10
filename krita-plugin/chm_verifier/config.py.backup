@@ -86,7 +86,7 @@ if IS_DEVELOPMENT:
     DEFAULT_API_URL = 'http://localhost:5000'
 else:
     # Production mode - use production server
-    DEFAULT_API_URL = 'https://human-made.replit.app'
+    DEFAULT_API_URL = 'https://certified-human-made.org'
 
 API_URL = os.environ.get('CHM_API_URL', DEFAULT_API_URL)
 
