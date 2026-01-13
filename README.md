@@ -75,7 +75,7 @@ You Create → Plugin Certifies → GitHub Timestamps → Anyone Can Verify
 
 #### Step 1: Download the Plugin
 
-Download the latest release ZIP file from [GitHub Releases](https://github.com/armstrongl/krita-certified-human-made/releases).
+Download the latest release ZIP file from [GitHub Releases](https://github.com/dabhunt/krita-certified-human-made/releases). (NOT source code, the other .zip)
 
 Remember where you save the ZIP file — you'll need it in the next step.
 
@@ -83,9 +83,6 @@ Remember where you save the ZIP file — you'll need it in the next step.
 
 1. **Open Krita**
 2. Go to **Tools** → **Scripts** → **Import Python Plugin from File...**
-
-   ![Import Python Plugin](https://docs.krita.org/en/_images/Krita_python_plugin_importer_dialog.png)
-
 3. Select the **ZIP file** you downloaded
 4. When prompted to enable the plugin, click **Yes**
 
@@ -104,12 +101,8 @@ After restarting Krita:
 3. Find **"Certified Human-Made"** in the list and ensure it's checked ✅
 4. Click **OK**
 
-**Verification**: Open **Tools** → **Scripts** → **Scripter** and check the console for:
-- `"CHM: Setup called"`
-- `"CHM: Loaded CHM library version X.X.X"`
-- `"CHM: Event capture started"`
-
-If you see these messages, installation was successful! ✅
+#### Step 5: Open Docker
+Open CHM Docker in Settings → Dockers → CHM Proof Exporter
 
 ### Getting Started
 
